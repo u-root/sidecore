@@ -254,22 +254,28 @@ func main() {
 	}
 
 	// NewCPU9P returns a CPU9P, properly initialized.
-	fs, err := client.NewCPU9P("/").Attach()
+	fssrv := client.NewCPU9P("/")
+	fs, err := fssrv.Attach()
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	u, err := client.NewUnion9P([]client.UnionMount{
-		client.UnionMount{Walk: []string{"/home"}, Mount: fs},
+//		client.UnionMount{Walk: []string{"/home"}, Mount: fs},
+		client.UnionMount{Walk: []string{}, Mount: /*cpio*/fs},
 		client.UnionMount{Walk: []string{}, Mount: cpiofs},
 	})
+	log.Printf("u is %v", u)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	*keyFile = getKeyFile(host, *keyFile)
 	*port = getPort(host, *port)
 	hn := getHostName(host)
 
 	verbose("Running package-based cpu command")
-	if err := newCPU(u, hn, a...); err != nil {
+	if err := newCPU(cpioserv, hn, a...); err != nil {
 		e := 1
 		log.Printf("SSH error %s", err)
 		sshErr := &ossh.ExitError{}
