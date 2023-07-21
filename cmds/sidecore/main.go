@@ -19,6 +19,7 @@ import (
 	// We use this ssh because it implements port redirection.
 	// It can not, however, unpack password-protected keys yet.
 
+	"github.com/hugelgupf/p9/p9"
 	config "github.com/kevinburke/ssh_config"
 	"github.com/u-root/cpu/client"
 	"github.com/u-root/u-root/pkg/ulog"
@@ -33,10 +34,10 @@ const defaultPort = "17010"
 var (
 	defaultKeyFile = filepath.Join(os.Getenv("HOME"), ".ssh/cpu_rsa")
 	// For the ssh server part
-	debug       = flag.Bool("d", false, "enable debug prints")
-	dbg9p       = flag.Bool("dbg9p", false, "show 9p io")
-	dump        = flag.Bool("dump", false, "Dump copious output, including a 9p trace, to a temp file at exit")
-	fstab       = flag.String("fstab", "", "pass an fstab to the cpud")
+	debug = flag.Bool("d", false, "enable debug prints")
+	dbg9p = flag.Bool("dbg9p", false, "show 9p io")
+	dump  = flag.Bool("dump", false, "Dump copious output, including a 9p trace, to a temp file at exit")
+	// for now, don't allow this. It will get too confusing. fstab       = flag.String("fstab", "", "pass an fstab to the cpud")
 	hostKeyFile = flag.String("hk", "" /*"/etc/ssh/ssh_host_rsa_key"*/, "file for host key")
 	keyFile     = flag.String("key", "", "key file")
 	namespace   = flag.String("namespace", "/lib:/lib64:/usr:/bin:/etc:/home", "Default namespace for the remote process -- set to none for none")
@@ -51,6 +52,11 @@ var (
 	// Do not call it directly, call verbose instead.
 	v          = func(string, ...interface{}) {}
 	dumpWriter *os.File
+)
+
+// These variables are in addition to the regular CPU command.
+var (
+	container = flag.String("container", "riscv-ubuntu@latest.cpio", "flattened docker container file")
 )
 
 func verbose(f string, a ...interface{}) {
@@ -130,7 +136,7 @@ func getPort(host, port string) string {
 	return p
 }
 
-func newCPU(host string, args ...string) (retErr error) {
+func newCPU(srv p9.Attacher, host string, args ...string) (retErr error) {
 	// note that 9P is enabled if namespace is not empty OR if ninep is true
 	c := client.Command(host, args...)
 	defer func() {
@@ -150,9 +156,9 @@ func newCPU(host string, args ...string) (retErr error) {
 		client.WithRoot(*root),
 		client.WithNameSpace(*namespace),
 		client.With9P(*ninep),
-		client.WithFSTab(*fstab),
 		client.WithNetwork(*network),
 		client.WithTempMount(*tmpMnt),
+		client.WithServer(srv),
 		client.WithTimeout(*timeout9P)); err != nil {
 		log.Fatal(err)
 	}
@@ -227,12 +233,43 @@ func main() {
 	}
 	verbose("Running as client, to host %q, args %q", host, a)
 
+	// Find the flattened container to use
+	cdir, ok := os.LookupEnv("SIDECORE_IMAGES")
+	if !ok {
+		cdir = filepath.Join(os.Getenv("HOME"), "sidecore-images")
+	}
+	*container = filepath.Join(cdir, *container)
+	if _, err := os.Stat(*container); err != nil {
+		log.Fatalf("Can not open container: %v", err)
+	}
+
+	// create 9p servers for the cpio and /.
+	cpioserv, err := client.NewCPIO9P(*container)
+	if err != nil {
+		log.Fatal(err)
+	}
+	cpiofs, err := cpioserv.Attach()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// NewCPU9P returns a CPU9P, properly initialized.
+	fs, err := client.NewCPU9P("/").Attach()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	u, err := client.NewUnion9P([]client.UnionMount{
+		client.UnionMount{Walk: []string{"/home"}, Mount: fs},
+		client.UnionMount{Walk: []string{}, Mount: cpiofs},
+	})
+
 	*keyFile = getKeyFile(host, *keyFile)
 	*port = getPort(host, *port)
 	hn := getHostName(host)
 
 	verbose("Running package-based cpu command")
-	if err := newCPU(hn, a...); err != nil {
+	if err := newCPU(u, hn, a...); err != nil {
 		e := 1
 		log.Printf("SSH error %s", err)
 		sshErr := &ossh.ExitError{}
