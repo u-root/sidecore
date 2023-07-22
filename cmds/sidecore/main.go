@@ -149,6 +149,8 @@ func newCPU(srv p9.Attacher, host string, args ...string) (retErr error) {
 
 	c.Env = os.Environ()
 
+	client.Debug9p = *dbg9p
+
 	if err := c.SetOptions(
 		client.WithPrivateKeyFile(*keyFile),
 		client.WithHostKeyFile(*hostKeyFile),
@@ -259,10 +261,10 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	log.Printf("fs %v", fs)
 
 	u, err := client.NewUnion9P([]client.UnionMount{
 //		client.UnionMount{Walk: []string{"/home"}, Mount: fs},
-		client.UnionMount{Walk: []string{}, Mount: /*cpio*/fs},
 		client.UnionMount{Walk: []string{}, Mount: cpiofs},
 	})
 	log.Printf("u is %v", u)
@@ -275,7 +277,7 @@ func main() {
 	hn := getHostName(host)
 
 	verbose("Running package-based cpu command")
-	if err := newCPU(cpioserv, hn, a...); err != nil {
+	if err := newCPU(u, hn, a...); err != nil {
 		e := 1
 		log.Printf("SSH error %s", err)
 		sshErr := &ossh.ExitError{}
