@@ -1,0 +1,5 @@
+#!/bin/bash
+set -e
+set -x
+
+SHELL=/bbin/elvish PWD=/ ./sidecore -container amd64-ubuntu@latest.cpio -key /home/rminnich/.ssh/cpu_rsa localhost /bbin/mount
