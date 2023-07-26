@@ -235,12 +235,14 @@ func main() {
 	}
 	verbose("Running as client, to host %q, args %q", host, a)
 
-	// Find the flattened container to use
-	cdir, ok := os.LookupEnv("SIDECORE_IMAGES")
-	if !ok {
-		cdir = filepath.Join(os.Getenv("HOME"), "sidecore-images")
+	if !filepath.IsAbs(*container) {
+		// Find the flattened container to use
+		cdir, ok := os.LookupEnv("SIDECORE_IMAGES")
+		if !ok {
+			cdir = filepath.Join(os.Getenv("HOME"), "sidecore-images")
+		}
+		*container = filepath.Join(cdir, *container)
 	}
-	*container = filepath.Join(cdir, *container)
 	if _, err := os.Stat(*container); err != nil {
 		log.Fatalf("Can not open container: %v", err)
 	}
@@ -264,8 +266,8 @@ func main() {
 	log.Printf("fs %v", fs)
 
 	u, err := client.NewUnion9P([]client.UnionMount{
-//		client.UnionMount{Walk: []string{"/home"}, Mount: fs},
-		client.UnionMount{Walk: []string{}, Mount: cpiofs},
+		client.NewMount([]string{"home"}, fs),
+		client.NewMount([]string{}, cpiofs),
 	})
 	log.Printf("u is %v", u)
 	if err != nil {

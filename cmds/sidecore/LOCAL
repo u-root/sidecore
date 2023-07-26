@@ -3,3 +3,6 @@ set -e
 set -x
 
 SHELL=/bbin/elvish PWD=/ ./sidecore -container amd64-ubuntu@latest.cpio -key /home/rminnich/.ssh/cpu_rsa localhost $*
+exit 0
+SHELL=/bbin/elvish PWD=/ ./sidecore -container  ~/go/src/github.com/u-root/cpu/client/data/a.cpio -key /home/rminnich/.ssh/cpu_rsa localhost $*
+exit 0
