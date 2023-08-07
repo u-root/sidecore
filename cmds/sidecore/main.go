@@ -159,7 +159,6 @@ func newCPU(srv p9.Attacher, host string, args ...string) (retErr error) {
 		client.WithNameSpace(*namespace),
 		client.With9P(*ninep),
 		client.WithNetwork(*network),
-		client.WithTempMount(*tmpMnt),
 		client.WithServer(srv),
 		client.WithTimeout(*timeout9P)); err != nil {
 		log.Fatal(err)
@@ -266,8 +265,8 @@ func main() {
 	log.Printf("fs %v", fs)
 
 	u, err := client.NewUnion9P([]client.UnionMount{
-		client.NewMount([]string{"home"}, fs),
-		client.NewMount([]string{}, cpiofs),
+		client.NewUnionMount([]string{"home"}, fs),
+		client.NewUnionMount([]string{}, cpiofs),
 	})
 	log.Printf("u is %v", u)
 	if err != nil {
