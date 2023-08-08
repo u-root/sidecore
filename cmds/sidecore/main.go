@@ -40,7 +40,7 @@ var (
 	// for now, don't allow this. It will get too confusing. fstab       = flag.String("fstab", "", "pass an fstab to the cpud")
 	hostKeyFile = flag.String("hk", "" /*"/etc/ssh/ssh_host_rsa_key"*/, "file for host key")
 	keyFile     = flag.String("key", "", "key file")
-	namespace   = flag.String("namespace", "/lib:/lib64:/usr:/bin:/etc:/home", "Default namespace for the remote process -- set to none for none")
+	namespace   = flag.String("namespace", "/lib:/lib64:/usr:/bin:/etc:/home="+filepath.Dir(os.Getenv("HOME")), "Default namespace for the remote process -- set to none for none")
 	network     = flag.String("net", "", "network type to use. Defaults to whatever the cpu client defaults to")
 	port        = flag.String("sp", "", "cpu default port")
 	root        = flag.String("root", "/", "9p root")
@@ -147,6 +147,10 @@ func newCPU(srv p9.Attacher, host string, args ...string) (retErr error) {
 	}()
 
 	c.Env = os.Environ()
+	// we only have linux servers at present, and
+	// since sidecore likes to remove options, not allow them,
+	// override TMPDIR.
+	c.Env = append(c.Env, "TMPDIR=/tmp")
 
 	client.Debug9p = *dbg9p
 
@@ -264,7 +268,7 @@ func main() {
 	log.Printf("fs %v", fs)
 
 	u, err := client.NewUnion9P([]client.UnionMount{
-		client.NewUnionMount([]string{"home"}, fs),
+		client.NewUnionMount([]string{"Users"}, fs),
 		client.NewUnionMount([]string{}, cpiofs),
 	})
 	log.Printf("u is %v", u)
