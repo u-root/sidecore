@@ -269,8 +269,13 @@ func main() {
 	}
 	log.Printf("fs %v", fs)
 
+
+	h, err := filepath.Rel("/", filepath.Dir(os.Getenv("HOME")))
+	if err != nil {
+		h = "home"
+	}
 	u, err := client.NewUnion9P([]client.UnionMount{
-		client.NewUnionMount([]string{"Users"}, fs),
+		client.NewUnionMount([]string{h}, fs),
 		client.NewUnionMount([]string{}, cpiofs),
 	})
 	log.Printf("u is %v", u)
