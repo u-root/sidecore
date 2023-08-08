@@ -40,7 +40,6 @@ var (
 	// for now, don't allow this. It will get too confusing. fstab       = flag.String("fstab", "", "pass an fstab to the cpud")
 	hostKeyFile = flag.String("hk", "" /*"/etc/ssh/ssh_host_rsa_key"*/, "file for host key")
 	keyFile     = flag.String("key", "", "key file")
-	namespace   = flag.String("namespace", "/lib:/lib64:/usr:/bin:/etc:/home="+filepath.Dir(os.Getenv("HOME")), "Default namespace for the remote process -- set to none for none")
 	network     = flag.String("net", "", "network type to use. Defaults to whatever the cpu client defaults to")
 	port        = flag.String("sp", "", "cpu default port")
 	root        = flag.String("root", "/", "9p root")
@@ -135,7 +134,7 @@ func getPort(host, port string) string {
 	return p
 }
 
-func newCPU(srv p9.Attacher, host string, args ...string) (retErr error) {
+func newCPU(srv p9.Attacher, namespace string, host string, args ...string) (retErr error) {
 	// note that 9P is enabled if namespace is not empty OR if ninep is true
 	c := client.Command(host, args...)
 	defer func() {
@@ -155,7 +154,7 @@ func newCPU(srv p9.Attacher, host string, args ...string) (retErr error) {
 		client.WithHostKeyFile(*hostKeyFile),
 		client.WithPort(*port),
 		client.WithRoot(*root),
-		client.WithNameSpace(*namespace),
+		client.WithNameSpace(namespace),
 		client.With9P(*ninep),
 		client.WithNetwork(*network),
 		client.WithServer(srv),
@@ -216,6 +215,13 @@ func usage() {
 }
 
 func main() {
+	home := filepath.Dir(os.Getenv("HOME"))
+	h, err := filepath.Rel("/", home)
+	if err != nil {
+		h = "home"
+	}
+
+	var namespace   = flag.String("namespace", "/lib:/lib64:/usr:/bin:/etc:"+home, "Default namespace for the remote process -- set to none for none")
 	flags()
 	args := flag.Args()
 	if len(args) == 0 {
@@ -269,11 +275,6 @@ func main() {
 	}
 	log.Printf("fs %v", fs)
 
-
-	h, err := filepath.Rel("/", filepath.Dir(os.Getenv("HOME")))
-	if err != nil {
-		h = "home"
-	}
 	u, err := client.NewUnion9P([]client.UnionMount{
 		client.NewUnionMount([]string{h}, fs),
 		client.NewUnionMount([]string{}, cpiofs),
@@ -288,7 +289,7 @@ func main() {
 	hn := getHostName(host)
 
 	verbose("Running package-based cpu command")
-	if err := newCPU(u, hn, a...); err != nil {
+	if err := newCPU(u, *namespace, hn, a...); err != nil {
 		e := 1
 		log.Printf("SSH error %s", err)
 		sshErr := &ossh.ExitError{}
