@@ -61,7 +61,7 @@ func verbose(f string, a ...interface{}) {
 	v("CPU:"+f+"\r\n", a...)
 }
 
-func flags() {
+func flags() (string, []string, error) {
 	flag.Parse()
 	if *dump && *debug {
 		log.Fatalf("You can only set either dump OR debug")
@@ -81,6 +81,23 @@ func flags() {
 		ulog.Log = log.New(dumpWriter, "", log.Ltime|log.Lmicroseconds)
 		v = ulog.Log.Printf
 	}
+	args := flag.Args()
+	if len(args) == 0 {
+		usage()
+	}
+	host := args[0]
+	a := args[1:]
+	if len(a) == 0 {
+		shellEnv := os.Getenv("SHELL")
+		if len(shellEnv) > 0 {
+			a = []string{shellEnv}
+		} else {
+			a = []string{"/bin/sh"}
+		}
+	}
+
+	return host, a, nil
+
 }
 
 // getKeyFile picks a keyfile if none has been set.
@@ -222,22 +239,8 @@ func main() {
 	}
 
 	var namespace   = flag.String("namespace", "/lib:/lib64:/usr:/bin:/etc:"+home, "Default namespace for the remote process -- set to none for none")
-	flags()
-	args := flag.Args()
-	if len(args) == 0 {
-		usage()
-	}
-	host := args[0]
-	a := args[1:]
-	if len(a) == 0 {
-		shellEnv := os.Getenv("SHELL")
-		if len(shellEnv) > 0 {
-			a = []string{shellEnv}
-		} else {
-			a = []string{"/bin/sh"}
-		}
-	}
-	verbose("Running as client, to host %q, args %q", host, a)
+	host, args, err := flags()
+	verbose("Running as client, to host %q, args %q", host, args)
 	// The remote system, for now, is always Linux or a standard Unix (or Plan 9)
 	// It will never be darwin (go argue with Apple)
 	// so /tmp is *always* /tmp
@@ -289,7 +292,7 @@ func main() {
 	hn := getHostName(host)
 
 	verbose("Running package-based cpu command")
-	if err := newCPU(u, *namespace, hn, a...); err != nil {
+	if err := newCPU(u, *namespace, hn, args...); err != nil {
 		e := 1
 		log.Printf("SSH error %s", err)
 		sshErr := &ossh.ExitError{}
