@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	// We use this ssh because it implements port redirection.
 	// It can not, however, unpack password-protected keys yet.
@@ -34,7 +35,11 @@ import (
 const defaultPort = "17010"
 
 type cpu struct {
-	host, port string
+	host      string
+	port      string
+	keyfile   string
+	hostkey   string
+	namespace string
 }
 
 var (
@@ -184,9 +189,9 @@ func getPort(host, port string) string {
 	return p
 }
 
-func newCPU(srv p9.Attacher, namespace string, host string, args ...string) (retErr error) {
+func newCPU(srv p9.Attacher, cpu *cpu, args ...string) (retErr error) {
 	// note that 9P is enabled if namespace is not empty OR if ninep is true
-	c := client.Command(host, args...)
+	c := client.Command(cpu.host, args...)
 	defer func() {
 		verbose("close")
 		if err := c.Close(); err != nil && retErr == nil {
@@ -200,11 +205,11 @@ func newCPU(srv p9.Attacher, namespace string, host string, args ...string) (ret
 	client.Debug9p = *dbg9p
 
 	if err := c.SetOptions(
-		client.WithPrivateKeyFile(*keyFile),
-		client.WithHostKeyFile(*hostKeyFile),
-		client.WithPort(*port),
+		client.WithPrivateKeyFile(cpu.keyfile),
+		client.WithHostKeyFile(cpu.hostkey),
+		client.WithPort(cpu.port),
 		client.WithRoot(*root),
-		client.WithNameSpace(namespace),
+		client.WithNameSpace(cpu.namespace),
 		client.With9P(*ninep),
 		client.WithNetwork(*network),
 		client.WithServer(srv),
@@ -276,8 +281,6 @@ func main() {
 	if err != nil {
 		usage(err)
 	}
-	host := cpus[0].host
-	verbose("Running as client, to host %q, args %q", host, args)
 	// The remote system, for now, is always Linux or a standard Unix (or Plan 9)
 	// It will never be darwin (go argue with Apple)
 	// so /tmp is *always* /tmp
@@ -324,18 +327,26 @@ func main() {
 		log.Fatal(err)
 	}
 
-	*keyFile = getKeyFile(host, *keyFile)
-	*port = getPort(host, cpus[0].port)
-	hn := getHostName(host)
+	var wg sync.WaitGroup
+	for _, cpu := range cpus {
+		wg.Add(1)
+		cpu.keyfile = getKeyFile(cpu.host, *keyFile)
+		cpu.port = getPort(cpu.host, cpu.port)
+		cpu.host = getHostName(cpu.host)
+		cpu.hostkey = *hostKeyFile
+		cpu.namespace = *namespace
 
-	verbose("Running package-based cpu command")
-	if err := newCPU(u, *namespace, hn, args...); err != nil {
-		e := 1
-		log.Printf("SSH error %s", err)
-		sshErr := &ossh.ExitError{}
-		if errors.As(err, &sshErr) {
-			e = sshErr.ExitStatus()
+		verbose("cpu to %v:%v", cpu.host, cpu.port)
+		if err := newCPU(u, &cpu, args...); err != nil {
+			e := 1
+			log.Printf("SSH error %s", err)
+			sshErr := &ossh.ExitError{}
+			if errors.As(err, &sshErr) {
+				e = sshErr.ExitStatus()
+			}
+			log.Printf("%v", e)
 		}
-		defer os.Exit(e)
+		wg.Done()
 	}
+	wg.Wait()
 }
