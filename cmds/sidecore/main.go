@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	// We use this ssh because it implements port redirection.
@@ -22,6 +23,7 @@ import (
 	"github.com/hugelgupf/p9/p9"
 	config "github.com/kevinburke/ssh_config"
 	"github.com/u-root/cpu/client"
+	"github.com/u-root/cpu/ds"
 	"github.com/u-root/u-root/pkg/ulog"
 
 	// We use this ssh because it can unpack password-protected private keys.
@@ -30,6 +32,10 @@ import (
 )
 
 const defaultPort = "17010"
+
+type cpu struct {
+	host, port string
+}
 
 var (
 	defaultKeyFile = filepath.Join(os.Getenv("HOME"), ".ssh/cpu_rsa")
@@ -52,19 +58,20 @@ var (
 	dumpWriter *os.File
 )
 
-// These variables are in addition to the regular CPU command.
+// These variables are in addition to the regular CPU command, for ds support.
 var (
 	container = flag.String("container", "riscv-ubuntu@latest.cpio", "flattened docker container file")
+	numCPUs   = flag.Int("n", 1, "number CPUs to run on")
 )
 
 func verbose(f string, a ...interface{}) {
 	v("CPU:"+f+"\r\n", a...)
 }
 
-func flags() (string, []string, error) {
+func flags() ([]cpu, []string, error) {
 	flag.Parse()
 	if *dump && *debug {
-		return "", nil, fmt.Errorf("You can only set either dump OR debug")
+		return nil, nil, fmt.Errorf("You can only set either dump OR debug")
 	}
 	if *debug {
 		v = log.Printf
@@ -82,12 +89,19 @@ func flags() (string, []string, error) {
 		v = ulog.Log.Printf
 	}
 	args := flag.Args()
-	if len(args) == 0 {
-		return "", nil, fmt.Errorf("Must have at least a hostname")
+	host := ds.DsDefault
+	a := []string{}
+	if len(args) > 0 {
+		host = args[0]
+		a = args[1:]
 	}
-	host := args[0]
-	a := args[1:]
+	if host == "." {
+		host = ds.DsDefault
+	}
 	if len(a) == 0 {
+		if *numCPUs > 1 {
+			log.Fatal("Interactive access with more than one CPU is not supported (yet)")
+		}
 		shellEnv := os.Getenv("SHELL")
 		if len(shellEnv) > 0 {
 			a = []string{shellEnv}
@@ -96,7 +110,26 @@ func flags() (string, []string, error) {
 		}
 	}
 
-	return host, a, nil
+	// Try to parse it as a dnssd: path.
+	// If that fails, we will run as though
+	// it were just a host name.
+	dq, err := ds.Parse(host)
+
+	var cpus []cpu
+
+	if err == nil {
+		c, err := ds.Lookup(dq, *numCPUs)
+		if err != nil {
+			log.Printf("%v", err)
+		}
+		for _, e := range c {
+			cpus = append(cpus, cpu{host: e.Entry.IPs[0].String(), port: strconv.Itoa(e.Entry.Port)})
+		}
+	} else {
+		cpus = append(cpus, cpu{host: host, port: *port})
+	}
+
+	return cpus, a, nil
 
 }
 
@@ -238,11 +271,12 @@ func main() {
 		h = "home"
 	}
 
-	var namespace   = flag.String("namespace", "/lib:/lib64:/usr:/bin:/etc:"+home, "Default namespace for the remote process -- set to none for none")
-	host, args, err := flags()
+	var namespace = flag.String("namespace", "/lib:/lib64:/usr:/bin:/etc:"+home, "Default namespace for the remote process -- set to none for none")
+	cpus, args, err := flags()
 	if err != nil {
 		usage(err)
 	}
+	host := cpus[0].host
 	verbose("Running as client, to host %q, args %q", host, args)
 	// The remote system, for now, is always Linux or a standard Unix (or Plan 9)
 	// It will never be darwin (go argue with Apple)
@@ -291,7 +325,7 @@ func main() {
 	}
 
 	*keyFile = getKeyFile(host, *keyFile)
-	*port = getPort(host, *port)
+	*port = getPort(host, cpus[0].port)
 	hn := getHostName(host)
 
 	verbose("Running package-based cpu command")
