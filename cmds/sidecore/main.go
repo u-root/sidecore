@@ -64,7 +64,7 @@ func verbose(f string, a ...interface{}) {
 func flags() (string, []string, error) {
 	flag.Parse()
 	if *dump && *debug {
-		log.Fatalf("You can only set either dump OR debug")
+		return "", nil, fmt.Errorf("You can only set either dump OR debug")
 	}
 	if *debug {
 		v = log.Printf
@@ -83,7 +83,7 @@ func flags() (string, []string, error) {
 	}
 	args := flag.Args()
 	if len(args) == 0 {
-		usage()
+		return "", nil, fmt.Errorf("Must have at least a hostname")
 	}
 	host := args[0]
 	a := args[1:]
@@ -224,11 +224,11 @@ loop:
 	return err
 }
 
-func usage() {
+func usage(err error) {
 	var b bytes.Buffer
 	flag.CommandLine.SetOutput(&b)
 	flag.PrintDefaults()
-	log.Fatalf("Usage: cpu [options] host [shell command]:\n%v", b.String())
+	log.Fatalf("%v:Usage: cpu [options] host [shell command]:\n%v", err, b.String())
 }
 
 func main() {
@@ -240,6 +240,9 @@ func main() {
 
 	var namespace   = flag.String("namespace", "/lib:/lib64:/usr:/bin:/etc:"+home, "Default namespace for the remote process -- set to none for none")
 	host, args, err := flags()
+	if err != nil {
+		usage(err)
+	}
 	verbose("Running as client, to host %q, args %q", host, args)
 	// The remote system, for now, is always Linux or a standard Unix (or Plan 9)
 	// It will never be darwin (go argue with Apple)
