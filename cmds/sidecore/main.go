@@ -279,13 +279,13 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("fs %v", fs)
+	verbose("fs %v", fs)
 
 	u, err := client.NewUnion9P([]client.UnionMount{
 		client.NewUnionMount([]string{h}, fs),
 		client.NewUnionMount([]string{}, cpiofs),
 	})
-	log.Printf("u is %v", u)
+	verbose("u is %v", u)
 	if err != nil {
 		log.Fatal(err)
 	}
