@@ -82,10 +82,6 @@
 //	      show 9p io
 //	-dump
 //	      Dump all debug output and 9p packets to a file in /tmp
-//	-hk string
-//	      host key file
-//	-key string
-//	      key file (default "$HOME/.ssh/cpu_rsa")
 //	-mountopts string
 //	      extra options for the 9p mount, default "". Lightly tested.
 //	-msize uint
@@ -205,6 +201,7 @@
 // from the remote cpu proc and not something else?
 // We need to ensure that the socket has only
 // been opened by the remote cpu process.
+//
 // The way we do it here is the result of discussions with Eric Grosse, among others.
 // Not that he endorses this solution, but he raised awareness
 // of the issues.
@@ -263,4 +260,21 @@
 // If you want to learn more read the factotum paper by Grosse et. al. and the original
 // Plan 9 papers on cpu, but be aware there are many subtle details visible only
 // in code.
+//
+// Environment variables
+// SIDECORE_ARCH -- architecture to run on. There are Go names: riscv64, amd64, and so on -- default runtime.GOOS
+// SIDECORE_DISTRO -- which distro to use -- ubuntu, alpin, etc. -- default "ubuntu"
+// SIDECORE_VERSION -- which version of the distro to use -- default "latest"
+// SIDECORE_IMAGES -- where the flattened cpio images are kept -- default ~/sidecore-images
+// SIDECORE_KEYFILE -- key file, e.g. ~/.ssh/cpu_rsa -- default "", since it can be looked up in ~/.ssh/config for non-mDNS cases
+// SIDECORE_HOSTKEYFILE -- host key file, it can be empty. -- default ""
+// HOME -- home directory, cpud will cd to this when it starts up -- default /
+// SHELL -- shell -- default /bin/sh
+//
+// An example of mDNS usage:
+// rminnich@pop-os:~/go/src/github.com/u-root/sidecore/cmds/sidecore$ set | grep SIDECORE
+// SIDECORE_ARCH=riscv64
+// SIDECORE_KEYFILE=/home/rminnich/.ssh/cpu_rsa
+// rminnich@pop-os:~/go/src/github.com/u-root/sidecore/cmds/sidecore$ ./sidecore . date
+// Thu Jan  1 00:09:59 UTC 1970
 package main
