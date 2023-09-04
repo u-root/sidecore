@@ -50,13 +50,11 @@ var (
 	dbg9p = flag.Bool("dbg9p", false, "show 9p io")
 	dump  = flag.Bool("dump", false, "Dump copious output, including a 9p trace, to a temp file at exit")
 	// for now, don't allow this. It will get too confusing. fstab       = flag.String("fstab", "", "pass an fstab to the cpud")
-	hostKeyFile = flag.String("hk", "" /*"/etc/ssh/ssh_host_rsa_key"*/, "file for host key")
-	keyFile     = flag.String("key", "", "key file")
-	network     = flag.String("net", "", "network type to use. Defaults to whatever the cpu client defaults to")
-	port        = flag.String("sp", "", "cpu default port")
-	root        = flag.String("root", "/", "9p root")
-	timeout9P   = flag.String("timeout9p", "100ms", "time to wait for the 9p mount to happen.")
-	ninep       = flag.Bool("9p", true, "Enable the 9p mount in the client")
+	network   = flag.String("net", "", "network type to use. Defaults to whatever the cpu client defaults to")
+	port      = flag.String("sp", "", "cpu default port")
+	root      = flag.String("root", "/", "9p root")
+	timeout9P = flag.String("timeout9p", "100ms", "time to wait for the 9p mount to happen.")
+	ninep     = flag.Bool("9p", true, "Enable the 9p mount in the client")
 
 	// v allows debug printing.
 	// Do not call it directly, call verbose instead.
@@ -66,8 +64,7 @@ var (
 
 // These variables are in addition to the regular CPU command, for ds support.
 var (
-	container = flag.String("container", "riscv-ubuntu@latest.cpio", "flattened docker container file")
-	numCPUs   = flag.Int("n", 1, "number CPUs to run on")
+	numCPUs = flag.Int("n", 1, "number CPUs to run on")
 )
 
 func verbose(f string, a ...interface{}) {
@@ -81,7 +78,7 @@ func envOrDefault(name, defaultName string) string {
 	return defaultName
 }
 
-func flags() ([]cpu, []string, error) {
+func flags(arch string) ([]cpu, []string, error) {
 	flag.Parse()
 	if *dump && *debug {
 		return nil, nil, fmt.Errorf("You can only set either dump OR debug")
@@ -103,7 +100,6 @@ func flags() ([]cpu, []string, error) {
 	}
 	args := flag.Args()
 	host := ds.DsDefault
-	arch := envOrDefault("SIDECOREARCH", runtime.GOARCH)
 
 	a := []string{}
 	if len(args) > 0 {
@@ -289,7 +285,8 @@ func main() {
 	}
 
 	var namespace = flag.String("namespace", "/lib:/lib64:/usr:/bin:/etc:"+home, "Default namespace for the remote process -- set to none for none")
-	cpus, args, err := flags()
+	arch := envOrDefault("SIDECORE_ARCH", runtime.GOARCH)
+	cpus, args, err := flags(arch)
 	if err != nil {
 		usage(err)
 	}
@@ -300,20 +297,24 @@ func main() {
 		log.Printf("Warning: could not set TMPDIR: %v", err)
 	}
 
-	if !filepath.IsAbs(*container) {
+	distro := envOrDefault("SIDECORE_DISTRO", "ubuntu")
+	version := envOrDefault("SIDECORE_VERSION", "latest")
+	container := fmt.Sprintf("%s-%s@%s.cpio", arch, distro, version)
+
+	if !filepath.IsAbs(container) {
 		// Find the flattened container to use
 		cdir, ok := os.LookupEnv("SIDECORE_IMAGES")
 		if !ok {
 			cdir = filepath.Join(os.Getenv("HOME"), "sidecore-images")
 		}
-		*container = filepath.Join(cdir, *container)
+		container = filepath.Join(cdir, container)
 	}
-	if _, err := os.Stat(*container); err != nil {
+	if _, err := os.Stat(container); err != nil {
 		log.Fatalf("Can not open container: %v", err)
 	}
 
 	// create 9p servers for the cpio and /.
-	cpioserv, err := client.NewCPIO9P(*container)
+	cpioserv, err := client.NewCPIO9P(container)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -339,13 +340,16 @@ func main() {
 		log.Fatal(err)
 	}
 
+	keyFile := os.Getenv("SIDECORE_KEYFILE")
+	hostKeyFile := os.Getenv("SIDECORE_HOSTKEYFILE")
+
 	var wg sync.WaitGroup
 	for _, cpu := range cpus {
 		wg.Add(1)
-		cpu.keyfile = getKeyFile(cpu.host, *keyFile)
+		cpu.keyfile = getKeyFile(cpu.host, keyFile)
 		cpu.port = getPort(cpu.host, cpu.port)
 		cpu.host = getHostName(cpu.host)
-		cpu.hostkey = *hostKeyFile
+		cpu.hostkey = hostKeyFile
 		cpu.namespace = *namespace
 
 		verbose("cpu to %v:%v", cpu.host, cpu.port)
