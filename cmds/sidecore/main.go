@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -73,6 +74,13 @@ func verbose(f string, a ...interface{}) {
 	v("CPU:"+f+"\r\n", a...)
 }
 
+func envOrDefault(name, defaultName string) string {
+	if n, ok := os.LookupEnv(name); ok {
+		return n
+	}
+	return defaultName
+}
+
 func flags() ([]cpu, []string, error) {
 	flag.Parse()
 	if *dump && *debug {
@@ -95,14 +103,18 @@ func flags() ([]cpu, []string, error) {
 	}
 	args := flag.Args()
 	host := ds.DsDefault
+	arch := envOrDefault("SIDECOREARCH", runtime.GOARCH)
+
 	a := []string{}
 	if len(args) > 0 {
 		host = args[0]
 		a = args[1:]
 	}
 	if host == "." {
-		host = ds.DsDefault
+		host = fmt.Sprintf("%s&arch=%s", ds.DsDefault, arch)
+		v("host specification is %q", host)
 	}
+
 	if len(a) == 0 {
 		if *numCPUs > 1 {
 			log.Fatal("Interactive access with more than one CPU is not supported (yet)")
