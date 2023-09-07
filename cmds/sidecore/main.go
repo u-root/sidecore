@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -168,12 +169,19 @@ func getKeyFile(host, kf string) string {
 
 // getHostName reads the host name from the config file,
 // if needed. If it is not found, the host name is returned.
-func getHostName(host string) string {
+func getHostName(host string) (string, error) {
 	h := config.Get(host, "HostName")
 	if len(h) != 0 {
 		host = h
 	}
-	return host
+	if !net.ParseIP(host).IsLinkLocalUnicast() {
+		return host, nil
+	}
+	iface, ok := os.LookupEnv("SIDECORE_IFACE")
+	if !ok {
+		return "", fmt.Errorf("%q IP6 link-level address requires environment variable SIDECORE_IFACE be set:%w", host, os.ErrInvalid)
+	}
+	return fmt.Sprintf("%s%%%s", host, iface), nil
 }
 
 // getPort gets a port.
@@ -345,10 +353,15 @@ func main() {
 
 	var wg sync.WaitGroup
 	for _, cpu := range cpus {
+		var err error
 		wg.Add(1)
 		cpu.keyfile = getKeyFile(cpu.host, keyFile)
 		cpu.port = getPort(cpu.host, cpu.port)
-		cpu.host = getHostName(cpu.host)
+		if cpu.host, err = getHostName(cpu.host); err != nil {
+			log.Printf("%v", err)
+			wg.Done()
+			continue
+		}
 		cpu.hostkey = hostKeyFile
 		cpu.namespace = *namespace
 
