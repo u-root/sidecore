@@ -282,6 +282,14 @@ func usage(err error) {
 	var b bytes.Buffer
 	flag.CommandLine.SetOutput(&b)
 	flag.PrintDefaults()
+	b.WriteString(`environment variables:
+SIDECORE_ARCH -- architecture to run on. There are Go names: riscv64, amd64, and so on -- default runtime.GOOS
+SIDECORE_DISTRO -- which distro to use -- ubuntu, alpin, etc. -- default "ubuntu"
+SIDECORE_VERSION -- which version of the distro to use -- default "latest"
+SIDECORE_IMAGES -- where the flattened cpio images are kept -- default ~/sidecore-images
+SIDECORE_KEYFILE -- key file, e.g. ~/.ssh/cpu_rsa -- default "", since it can be looked up in ~/.ssh/config for non-mDNS cases
+SIDECORE_HOSTKEYFILE -- host key file, it can be empty. -- default ""
+`)
 	log.Fatalf("%v:Usage: cpu [options] host [shell command]:\n%v", err, b.String())
 }
 
@@ -294,6 +302,9 @@ func main() {
 
 	var namespace = flag.String("namespace", "/lib:/lib64:/usr:/bin:/etc:"+home, "Default namespace for the remote process -- set to none for none")
 	arch := envOrDefault("SIDECORE_ARCH", runtime.GOARCH)
+	flag.Usage = func() {
+		usage(err)
+	}
 	cpus, args, err := flags(arch)
 	if err != nil {
 		usage(err)
