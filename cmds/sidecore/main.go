@@ -14,6 +14,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -36,25 +37,25 @@ import (
 const defaultPort = "17010"
 
 type cpu struct {
-	host      string
-	port      string
-	keyfile   string
-	hostkey   string
-	namespace string
+	host    string
+	port    string
+	keyfile string
+	hostkey string
+	fstab   string
 }
 
 var (
 	defaultKeyFile = filepath.Join(os.Getenv("HOME"), ".ssh/cpu_rsa")
 	// For the ssh server part
-	debug = flag.Bool("d", false, "enable debug prints")
-	dbg9p = flag.Bool("dbg9p", false, "show 9p io")
-	dump  = flag.Bool("dump", false, "Dump copious output, including a 9p trace, to a temp file at exit")
-	// for now, don't allow this. It will get too confusing. fstab       = flag.String("fstab", "", "pass an fstab to the cpud")
+	debug     = flag.Bool("d", false, "enable debug prints")
+	dbg9p     = flag.Bool("dbg9p", false, "show 9p io")
+	dump      = flag.Bool("dump", false, "Dump copious output, including a 9p trace, to a temp file at exit")
 	network   = flag.String("net", "", "network type to use. Defaults to whatever the cpu client defaults to")
 	port      = flag.String("sp", "", "cpu default port")
 	root      = flag.String("root", "/", "9p root")
 	timeout9P = flag.String("timeout9p", "100ms", "time to wait for the 9p mount to happen.")
 	ninep     = flag.Bool("9p", true, "Enable the 9p mount in the client")
+	env = flag.String("environment", "", "extra environment variables, useful for debug, especially on windows")
 
 	// v allows debug printing.
 	// Do not call it directly, call verbose instead.
@@ -216,6 +217,9 @@ func newCPU(srv p9.Attacher, cpu *cpu, args ...string) (retErr error) {
 	}()
 
 	c.Env = os.Environ()
+	if len(*env) > 0 {
+		c.Env = append(c.Env, strings.Split(*env, ";")...)
+	}
 
 	client.Debug9p = *dbg9p
 
@@ -224,13 +228,15 @@ func newCPU(srv p9.Attacher, cpu *cpu, args ...string) (retErr error) {
 		client.WithHostKeyFile(cpu.hostkey),
 		client.WithPort(cpu.port),
 		client.WithRoot(*root),
-		client.WithNameSpace(cpu.namespace),
 		client.With9P(*ninep),
 		client.WithNetwork(*network),
 		client.WithServer(srv),
 		client.WithTimeout(*timeout9P)); err != nil {
 		log.Fatal(err)
 	}
+
+	c.FSTab = cpu.fstab
+
 	if err := c.Dial(); err != nil {
 		return fmt.Errorf("Dial: %v", err)
 	}
@@ -286,22 +292,53 @@ SIDECORE_HOSTKEYFILE -- host key file, it can be empty. -- default ""
 	log.Fatalf("%v:Usage: cpu [options] host [shell command]:\n%v", err, b.String())
 }
 
-func main() {
-	home := filepath.Dir(os.Getenv("HOME"))
-	h, err := filepath.Rel("/", home)
-	if err != nil {
-		h = "home"
+// Windows breaks all the rules, so we generate a
+// unix-style fstab here.
+// If we ever run cpud on windows, we'll need to write code to translate
+// unix-style fstab to windows paths, but that is for another time.
+// Nobody seems to care about windows cpud servers yet.
+func namespaceToFSTab(ns string) string {
+	fstab := ""
+	for _, ent := range strings.Split(ns, ";") {
+		if len(ent) == 0 {
+			break
+		}
+		fstab += fmt.Sprintf("%s %s none defaults,bind 0 0\n", path.Join("/tmp/cpu", ent), ent)
 	}
+	return fstab
+}
 
-	var namespace = flag.String("namespace", "/lib:/lib64:/usr:/bin:/etc:"+home, "Default namespace for the remote process -- set to none for none")
-	arch := envOrDefault("SIDECORE_ARCH", runtime.GOARCH)
-	flag.Usage = func() {
-		usage(err)
+func main() {
+	root := "/"
+	home := filepath.Dir(os.Getenv("HOME"))
+	verbose("GOOS is %v, home %v", runtime.GOOS, home)
+	var h string
+	if runtime.GOOS == "windows" {
+		root := filepath.VolumeName(home)
+		home = strings.TrimPrefix("/", filepath.ToSlash(strings.TrimPrefix(home, root)))
+		h = home
+		// oh windows. Oh windows.
+		root = "C:\\"
+		home = "/Users"
+		h = "/Users"
+	} else {
+		var err error
+		if h, err = filepath.Rel("/", home); err != nil {
+			h = "home"
+		}
+		verbose("h %v err %v", h, err)
 	}
+	verbose("home %v", home)
+	verbose("h %v", h)
+
+	// Because Windows paths contain :, we can't use that as the separator any more. I am pretty sure ; is safe. The horror.
+	var namespace = flag.String("namespace", "/lib;/lib64;/usr;/bin;/etc;"+home, "Default namespace for the remote process -- set to none for none")
+	arch := envOrDefault("SIDECORE_ARCH", runtime.GOARCH)
 	cpus, args, err := flags(arch)
 	if err != nil {
 		usage(err)
 	}
+	verbose("home is %q", home)
 	// The remote system, for now, is always Linux or a standard Unix (or Plan 9)
 	// It will never be darwin (go argue with Apple)
 	// so /tmp is *always* /tmp
@@ -312,6 +349,7 @@ func main() {
 	distro := envOrDefault("SIDECORE_DISTRO", "ubuntu")
 	version := envOrDefault("SIDECORE_VERSION", "latest")
 	container := fmt.Sprintf("%s-%s@%s.cpio", arch, distro, version)
+	fstab := namespaceToFSTab(*namespace)
 
 	if !filepath.IsAbs(container) {
 		// Find the flattened container to use
@@ -336,12 +374,12 @@ func main() {
 	}
 
 	// NewCPU9P returns a CPU9P, properly initialized.
-	fssrv := client.NewCPU9P("/")
+	fssrv := client.NewCPU9P(root)
 	fs, err := fssrv.Attach()
 	if err != nil {
 		log.Fatal(err)
 	}
-	verbose("fs %v", fs)
+	verbose("fs %v, root %v, bind at %v", fs, root, h)
 
 	u, err := client.NewUnion9P([]client.UnionMount{
 		client.NewUnionMount([]string{h}, fs),
@@ -367,7 +405,7 @@ func main() {
 			continue
 		}
 		cpu.hostkey = hostKeyFile
-		cpu.namespace = *namespace
+		cpu.fstab = fstab
 
 		verbose("cpu to %v:%v", cpu.host, cpu.port)
 		if err := newCPU(u, &cpu, args...); err != nil {
