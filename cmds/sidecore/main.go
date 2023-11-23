@@ -349,6 +349,7 @@ func main() {
 	distro := envOrDefault("SIDECORE_DISTRO", "ubuntu")
 	version := envOrDefault("SIDECORE_VERSION", "latest")
 	container := fmt.Sprintf("%s-%s@%s.cpio", arch, distro, version)
+	verbose("Using container %s", container)
 	fstab := namespaceToFSTab(*namespace)
 
 	if !filepath.IsAbs(container) {
