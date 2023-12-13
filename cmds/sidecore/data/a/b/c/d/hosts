@@ -1,0 +1,17 @@
+##
+# Host Database
+#
+# localhost is used to configure the loopback interface
+# when the system is booting.  Do not change this entry.
+##
+127.0.0.1	localhost
+255.255.255.255	broadcasthost
+::1             localhost
+
+#
+105.128.93.186 sal-starfive01.ssi.samsung.com  starfive01 vf01
+
+10.172.47.132 jiraweb02 jira.samsungds.net
+
+fe80::6ecf:39ff:fe00:3f6a vf3
+
