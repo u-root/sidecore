@@ -3,12 +3,13 @@ module github.com/u-root/sidecore
 go 1.20
 
 require (
+	github.com/go-git/go-billy/v5 v5.5.0
 	github.com/hugelgupf/p9 v0.2.1-0.20230803231326-7b9704081cf5
 	github.com/kevinburke/ssh_config v1.2.0
 	github.com/u-root/cpu v0.0.0-20230807161724-f2081b5707bd
 	github.com/u-root/u-root v0.11.0
-	golang.org/x/crypto v0.11.0
-	golang.org/x/sys v0.10.0
+	golang.org/x/crypto v0.13.0
+	golang.org/x/sys v0.12.0
 )
 
 require (
@@ -26,7 +27,7 @@ require (
 	github.com/yusufpapurcu/wmi v1.2.3 // indirect
 	golang.org/x/exp v0.0.0-20230626212559-97b1e661b5df // indirect
 	golang.org/x/mod v0.11.0 // indirect
-	golang.org/x/net v0.11.0 // indirect
+	golang.org/x/net v0.15.0 // indirect
 	golang.org/x/sync v0.3.0 // indirect
 	golang.org/x/tools v0.10.0 // indirect
 )
