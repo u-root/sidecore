@@ -19,6 +19,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"time"
 
 	"net"
 
@@ -40,11 +41,12 @@ func (*fsCPIO) Root() string {
 }
 
 func (*no) Create(filename string) (billy.File, error) { return nil, os.ErrInvalid }
-func (*no) Open(filename string) (billy.File, error)   { return nil, os.ErrInvalid }
+func (*no) Open(filename string) (billy.File, error)   { panic("open"); return nil, os.ErrInvalid }
 func (*no) OpenFile(filename string, flag int, perm os.FileMode) (billy.File, error) {
+	panic("open")
 	return nil, os.ErrPermission
 }
-func (*no) Stat(filename string) (os.FileInfo, error) { return nil, os.ErrInvalid }
+func (*no) Stat(filename string) (os.FileInfo, error) { panic("stat"); return nil, os.ErrInvalid }
 func (*no) Rename(oldpath, newpath string) error      { return os.ErrPermission }
 func (*no) Remove(filename string) error              { return os.ErrPermission }
 func (*no) Join(elem ...string) string                { return path.Join(elem...) }
@@ -88,12 +90,38 @@ type ok struct{}
 
 func (*ok) Close() error { return nil }
 
+// fsCPIO implements fs.Stat
 type fsCPIO struct {
 	no
 	file *os.File
 	rr   cpio.RecordReader
 	m    map[string]uint64
 	recs []cpio.Record
+}
+
+func (f *fsCPIO) Name() string {
+	return f.recs[0].Name
+}
+
+func (f *fsCPIO) Size() int64 {
+	return int64(f.recs[0].FileSize)
+}
+
+func (f *fsCPIO) Mode() os.FileMode {
+	return os.FileMode(f.recs[0].Mode)
+}
+
+func (f *fsCPIO) ModTime() time.Time {
+	return time.Now()
+}
+
+func (f *fsCPIO) IsDir() bool {
+	return true
+}
+
+func (f *fsCPIO) Sys() any {
+	return nil
+
 }
 
 var _ billy.Filesystem = &fsCPIO{}
@@ -142,6 +170,10 @@ func NewfsCPIO(c string) (*fsCPIO, error) {
 	}
 
 	return &fsCPIO{file: f, rr: rr, recs: recs, m: m}, nil
+}
+
+func (fs *fsCPIO) Stat(filename string) (os.FileInfo, error) {
+	return fs, nil
 }
 
 func (l *file) rec() (*cpio.Record, error) {
