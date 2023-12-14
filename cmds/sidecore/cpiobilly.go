@@ -63,6 +63,16 @@ func (*no)	Lock() error {return nil}
 func (*no)	Unlock() error {return nil}
 func (*no)	Truncate(size int64) error { return os.ErrPermission}
 
+// File IO -- most of these don't matter for NFS.
+// We do not track position, b/c NFS always sends an offset.
+type fileFail struct {}
+func (*fileFail) Write(p []byte) (n int, err error) {panic("Write"); return -1, os.ErrPermission}
+func (*fileFail)Read(p []byte) (n int, err error){panic("Read"); return -1, os.ErrPermission}
+func (*fileFail)Seek(offset int64, whence int) (int64, error){panic("Seek"); return -1, os.ErrPermission}
+
+// The only one we will actually implement -- later.
+func (*fileFail)ReadAt(p []byte, off int64) (n int, err error){panic("ReadAt"); return -1, os.ErrPermission}
+
 type ok struct {}
 func (*ok) Close() error {return nil}
 
@@ -79,6 +89,7 @@ var _ billy.Filesystem = &fsCPIO{}
 // A file is a server and an index into the cpio records.
 type file struct {
 	no
+	fileFail
 	ok
 	fs   *fsCPIO
 	path uint64
