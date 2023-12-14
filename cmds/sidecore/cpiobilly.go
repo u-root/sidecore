@@ -20,8 +20,12 @@ import (
 	"path"
 	"path/filepath"
 
+	"net"
+
 	"github.com/go-git/go-billy/v5"
 	"github.com/u-root/u-root/pkg/cpio"
+	nfs "github.com/willscott/go-nfs"
+	nfshelper "github.com/willscott/go-nfs/helpers"
 )
 
 type no struct{}
@@ -58,23 +62,31 @@ func (*no) Symlink(target, link string) error          { return os.ErrPermission
 func (*no) Readlink(link string) (string, error)       { panic("readlink"); return "", os.ErrInvalid }
 
 // File
-func (*no) Name() string {panic("Name"); return ""}
-func (*no)	Lock() error {return nil}
-func (*no)	Unlock() error {return nil}
-func (*no)	Truncate(size int64) error { return os.ErrPermission}
+func (*no) Name() string              { panic("Name"); return "" }
+func (*no) Lock() error               { return nil }
+func (*no) Unlock() error             { return nil }
+func (*no) Truncate(size int64) error { return os.ErrPermission }
 
 // File IO -- most of these don't matter for NFS.
 // We do not track position, b/c NFS always sends an offset.
-type fileFail struct {}
-func (*fileFail) Write(p []byte) (n int, err error) {panic("Write"); return -1, os.ErrPermission}
-func (*fileFail)Read(p []byte) (n int, err error){panic("Read"); return -1, os.ErrPermission}
-func (*fileFail)Seek(offset int64, whence int) (int64, error){panic("Seek"); return -1, os.ErrPermission}
+type fileFail struct{}
+
+func (*fileFail) Write(p []byte) (n int, err error) { panic("Write"); return -1, os.ErrPermission }
+func (*fileFail) Read(p []byte) (n int, err error)  { panic("Read"); return -1, os.ErrPermission }
+func (*fileFail) Seek(offset int64, whence int) (int64, error) {
+	panic("Seek")
+	return -1, os.ErrPermission
+}
 
 // The only one we will actually implement -- later.
-func (*fileFail)ReadAt(p []byte, off int64) (n int, err error){panic("ReadAt"); return -1, os.ErrPermission}
+func (*fileFail) ReadAt(p []byte, off int64) (n int, err error) {
+	panic("ReadAt")
+	return -1, os.ErrPermission
+}
 
-type ok struct {}
-func (*ok) Close() error {return nil}
+type ok struct{}
+
+func (*ok) Close() error { return nil }
 
 type fsCPIO struct {
 	no
@@ -95,7 +107,8 @@ type file struct {
 	path uint64
 }
 
-var _ billy.File= &file{}
+var _ billy.File = &file{}
+
 // NewfsCPIO returns a fsCPIO, properly initialized.
 func NewfsCPIO(c string) (*fsCPIO, error) {
 	f, err := os.Open(c)
@@ -182,6 +195,7 @@ func (l *file) readdir() ([]uint64, error) {
 	}
 	return list, nil
 }
+
 /*
 // Readdir implements p9.File.Readdir.
 // This is a bit of a mess in cpio, but the good news is that
@@ -275,3 +289,35 @@ func (l *file) GetAttr(req p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error) {
 	}
 }
 */
+
+// ROFS is an intercepter for the filesystem indicating it should
+// be read only. The undelrying billy.Memfs indicates it supports
+// writing, but does not in implement billy.Change to support
+// modification of permissions / modTimes, and as such cannot be
+// used as RW system.
+type ROFS struct {
+	billy.Filesystem
+}
+
+// Capabilities exports the filesystem as readonly
+func (ROFS) Capabilities() billy.Capability {
+	return billy.ReadCapability
+}
+
+func srv() error {
+	listener, err := net.Listen("tcp", ":2049")
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Server running at %s\n", listener.Addr())
+
+	mem, err := NewfsCPIO("data/a.cpio")
+	if err != nil {
+		return err
+	}
+
+	handler := nfshelper.NewNullAuthHandler(ROFS{mem})
+	cacheHelper := nfshelper.NewCachingHandler(handler, 1024)
+	fmt.Printf("%v", nfs.Serve(listener, cacheHelper))
+	return nil
+}
