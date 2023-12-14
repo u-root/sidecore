@@ -57,6 +57,8 @@ var (
 	ninep     = flag.Bool("9p", true, "Enable the 9p mount in the client")
 	env       = flag.String("environment", "", "extra environment variables, useful for debug, especially on windows")
 
+	srvnfs = flag.Bool("nfs", false, "start nfs")
+
 	// v allows debug printing.
 	// Do not call it directly, call verbose instead.
 	v          = func(string, ...interface{}) {}
@@ -395,6 +397,11 @@ func main() {
 	hostKeyFile := os.Getenv("SIDECORE_HOSTKEYFILE")
 
 	var wg sync.WaitGroup
+	if *srvnfs {
+		wg.Add(1)
+		err := srv();
+		log.Printf("nfs: %v", err)
+	}
 	for _, cpu := range cpus {
 		var err error
 		wg.Add(1)
