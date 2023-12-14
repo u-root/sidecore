@@ -63,38 +63,32 @@ func (*no)	Symlink(target, link string) error {return os.ErrPermission}
 func (*no)	Readlink(link string) (string, error) {panic("readlink") ; return "", os.ErrPermission}
 
 
-type CPIOFS struct {
+type fsCPIO struct {
 	no
-}
-
-var _ billy.Filesystem = &CPIOFS{}
-
-// CPIO9P is a p9.Attacher.
-type CPIO9P struct {
-	p9.DefaultWalkGetAttr
-
 	file *os.File
 	rr   cpio.RecordReader
 	m    map[string]uint64
 	recs []cpio.Record
 }
 
-// CPIO9PFile defines a FID.
+var _ billy.Filesystem = &fsCPIO{}
+
+// fsCPIOFile defines a FID.
 // It kind of sucks because it has a pointer
 // for every FID. Luckily they go away when clunked.
-type CPIO9PFID struct {
+type file struct {
 	p9.DefaultWalkGetAttr
 	templatefs.XattrUnimplemented
 	templatefs.NilCloser
 	templatefs.NilSyncer
 	templatefs.NoopRenamed
 
-	fs   *CPIO9P
+	fs   *fsCPIO
 	path uint64
 }
 
-// NewCPIO9P returns a CPIO9P, properly initialized.
-func NewCPIO9P(c string) (*CPIO9P, error) {
+// NewfsCPIO returns a fsCPIO, properly initialized.
+func NewfsCPIO(c string) (*fsCPIO, error) {
 	f, err := os.Open(c)
 	if err != nil {
 		return nil, err
@@ -125,21 +119,16 @@ func NewCPIO9P(c string) (*CPIO9P, error) {
 		m[r.Info.Name] = uint64(i)
 	}
 
-	return &CPIO9P{file: f, rr: rr, recs: recs, m: m}, nil
+	return &fsCPIO{file: f, rr: rr, recs: recs, m: m}, nil
 }
 
 // Attach implements p9.Attacher.Attach.
 // Only works for root.
-func (s *CPIO9P) Attach() (p9.File, error) {
-	return &CPIO9PFID{fs: s, path: 0}, nil
+func (s *fsCPIO) Attach() (p9.File, error) {
+	return &file{fs: s, path: 0}, nil
 }
 
-var (
-	_ p9.File     = &CPIO9PFID{}
-	_ p9.Attacher = &CPIO9P{}
-)
-
-func (l *CPIO9PFID) rec() (*cpio.Record, error) {
+func (l *file) rec() (*cpio.Record, error) {
 	if int(l.path) > len(l.fs.recs) {
 		return nil, os.ErrNotExist
 	}
@@ -148,7 +137,7 @@ func (l *CPIO9PFID) rec() (*cpio.Record, error) {
 }
 
 // info constructs a QID for this file.
-func (l *CPIO9PFID) info() (p9.QID, *cpio.Info, error) {
+func (l *file) info() (p9.QID, *cpio.Info, error) {
 	var qid p9.QID
 
 	r, err := l.rec()
@@ -175,20 +164,20 @@ func (l *CPIO9PFID) info() (p9.QID, *cpio.Info, error) {
 }
 
 // Walk implements p9.File.Walk.
-func (l *CPIO9PFID) Walk(names []string) ([]p9.QID, p9.File, error) {
+func (l *file) Walk(names []string) ([]p9.QID, p9.File, error) {
 	r, err := l.rec()
 	if err != nil {
 		return nil, nil, err
 	}
 	verbose("cpio:starting record for %v is %v", l, r)
 	var qids []p9.QID
-	last := &CPIO9PFID{path: l.path, fs: l.fs}
+	last := &file{path: l.path, fs: l.fs}
 	// If the names are empty we return info for l
 	// An extra stat is never hurtful; all servers
 	// are a bundle of race conditions and there's no need
 	// to make things worse.
 	if len(names) == 0 {
-		c := &CPIO9PFID{path: last.path, fs: l.fs}
+		c := &file{path: last.path, fs: l.fs}
 		qid, fi, err := c.info()
 		verbose("cpio:Walk to %v: %v, %v, %v", *c, qid, fi, err)
 		if err != nil {
@@ -214,7 +203,7 @@ func (l *CPIO9PFID) Walk(names []string) ([]p9.QID, p9.File, error) {
 		if !ok {
 			return nil, nil, os.ErrNotExist
 		}
-		c := &CPIO9PFID{path: ix, fs: l.fs}
+		c := &file{path: ix, fs: l.fs}
 		qid, fi, err := c.info()
 		verbose("cpio:Walk to %q from %v: %v, %v, %v", fullpath, r, qid, fi, ok)
 		if err != nil {
@@ -228,7 +217,7 @@ func (l *CPIO9PFID) Walk(names []string) ([]p9.QID, p9.File, error) {
 }
 
 // Open implements p9.File.Open.
-func (l *CPIO9PFID) Open(mode p9.OpenFlags) (p9.QID, uint32, error) {
+func (l *file) Open(mode p9.OpenFlags) (p9.QID, uint32, error) {
 	qid, fi, err := l.info()
 	verbose("cpio:Open %v: (%v, %v, %v", *l, qid, fi, err)
 	if err != nil {
@@ -247,7 +236,7 @@ func (l *CPIO9PFID) Open(mode p9.OpenFlags) (p9.QID, uint32, error) {
 }
 
 // Read implements p9.File.ReadAt.
-func (l *CPIO9PFID) ReadAt(p []byte, offset int64) (int, error) {
+func (l *file) ReadAt(p []byte, offset int64) (int, error) {
 	r, err := l.rec()
 	if err != nil {
 		return -1, err
@@ -256,37 +245,37 @@ func (l *CPIO9PFID) ReadAt(p []byte, offset int64) (int, error) {
 }
 
 // Write implements p9.File.WriteAt.
-func (l *CPIO9PFID) WriteAt(p []byte, offset int64) (int, error) {
+func (l *file) WriteAt(p []byte, offset int64) (int, error) {
 	return -1, os.ErrPermission
 }
 
 // Create implements p9.File.Create.
-func (l *CPIO9PFID) Create(name string, mode p9.OpenFlags, permissions p9.FileMode, _ p9.UID, _ p9.GID) (p9.File, p9.QID, uint32, error) {
+func (l *file) Create(name string, mode p9.OpenFlags, permissions p9.FileMode, _ p9.UID, _ p9.GID) (p9.File, p9.QID, uint32, error) {
 	return nil, p9.QID{}, 0, os.ErrPermission
 }
 
 // Mkdir implements p9.File.Mkdir.
 //
 // Not properly implemented.
-func (l *CPIO9PFID) Mkdir(name string, permissions p9.FileMode, _ p9.UID, _ p9.GID) (p9.QID, error) {
+func (l *file) Mkdir(name string, permissions p9.FileMode, _ p9.UID, _ p9.GID) (p9.QID, error) {
 	return p9.QID{}, os.ErrPermission
 }
 
 // Symlink implements p9.File.Symlink.
 //
 // Not properly implemented.
-func (l *CPIO9PFID) Symlink(oldname string, newname string, _ p9.UID, _ p9.GID) (p9.QID, error) {
+func (l *file) Symlink(oldname string, newname string, _ p9.UID, _ p9.GID) (p9.QID, error) {
 	return p9.QID{}, os.ErrPermission
 }
 
 // Link implements p9.File.Link.
 //
 // Not properly implemented.
-func (l *CPIO9PFID) Link(target p9.File, newname string) error {
+func (l *file) Link(target p9.File, newname string) error {
 	return os.ErrPermission
 }
 
-func (l *CPIO9PFID) readdir() ([]uint64, error) {
+func (l *file) readdir() ([]uint64, error) {
 	verbose("cpio:readdir at %d", l.path)
 	r, err := l.rec()
 	if err != nil {
@@ -319,7 +308,7 @@ func (l *CPIO9PFID) readdir() ([]uint64, error) {
 // Readdir implements p9.File.Readdir.
 // This is a bit of a mess in cpio, but the good news is that
 // files will be in some sort of order ...
-func (l *CPIO9PFID) Readdir(offset uint64, count uint32) (p9.Dirents, error) {
+func (l *file) Readdir(offset uint64, count uint32) (p9.Dirents, error) {
 	qid, _, err := l.info()
 	if err != nil {
 		return nil, err
@@ -342,7 +331,7 @@ func (l *CPIO9PFID) Readdir(offset uint64, count uint32) (p9.Dirents, error) {
 	verbose("cpio:add path %d '.'", l.path)
 	//log.Printf("cpio:readdir %q returns %d entries start at offset %d", l.path, len(fi), offset)
 	for _, i := range list[offset:] {
-		entry := CPIO9PFID{path: i, fs: l.fs}
+		entry := file{path: i, fs: l.fs}
 		qid, _, err := entry.info()
 		if err != nil {
 			continue
@@ -365,7 +354,7 @@ func (l *CPIO9PFID) Readdir(offset uint64, count uint32) (p9.Dirents, error) {
 }
 
 // Readlink implements p9.File.Readlink.
-func (l *CPIO9PFID) Readlink() (string, error) {
+func (l *file) Readlink() (string, error) {
 	v("cpio:readlinkat:%v", l)
 	r, err := l.rec()
 	if err != nil {
@@ -382,52 +371,52 @@ func (l *CPIO9PFID) Readlink() (string, error) {
 }
 
 // Flush implements p9.File.Flush.
-func (l *CPIO9PFID) Flush() error {
+func (l *file) Flush() error {
 	return nil
 }
 
 // UnlinkAt implements p9.File.UnlinkAt.
-func (l *CPIO9PFID) UnlinkAt(name string, flags uint32) error {
+func (l *file) UnlinkAt(name string, flags uint32) error {
 	return os.ErrPermission
 }
 
 // Mknod implements p9.File.Mknod.
-func (*CPIO9PFID) Mknod(name string, mode p9.FileMode, major uint32, minor uint32, _ p9.UID, _ p9.GID) (p9.QID, error) {
+func (*file) Mknod(name string, mode p9.FileMode, major uint32, minor uint32, _ p9.UID, _ p9.GID) (p9.QID, error) {
 	return p9.QID{}, syscall.ENOSYS
 }
 
 // Rename implements p9.File.Rename.
-func (*CPIO9PFID) Rename(directory p9.File, name string) error {
+func (*file) Rename(directory p9.File, name string) error {
 	return syscall.ENOSYS
 }
 
 // RenameAt implements p9.File.RenameAt.
 // There is no guarantee that there is not a zipslip issue.
-func (l *CPIO9PFID) RenameAt(oldName string, newDir p9.File, newName string) error {
+func (l *file) RenameAt(oldName string, newDir p9.File, newName string) error {
 	return syscall.ENOSYS
 }
 
 // StatFS implements p9.File.StatFS.
 //
 // Not implemented.
-func (*CPIO9PFID) StatFS() (p9.FSStat, error) {
+func (*file) StatFS() (p9.FSStat, error) {
 	return p9.FSStat{}, syscall.ENOSYS
 }
 
 // SetAttr implements SetAttr.
-func (l *CPIO9PFID) SetAttr(mask p9.SetAttrMask, attr p9.SetAttr) error {
+func (l *file) SetAttr(mask p9.SetAttrMask, attr p9.SetAttr) error {
 	return os.ErrPermission
 }
 
 // Lock implements lock by doing nothing.
-func (*CPIO9PFID) Lock(pid int, locktype p9.LockType, flags p9.LockFlags, start, length uint64, client string) (p9.LockStatus, error) {
+func (*file) Lock(pid int, locktype p9.LockType, flags p9.LockFlags, start, length uint64, client string) (p9.LockStatus, error) {
 	return p9.LockStatus(0), nil
 }
 
 // GetAttr implements p9.File.GetAttr.
 //
 // Not fully implemented.
-func (l *CPIO9PFID) GetAttr(req p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error) {
+func (l *file) GetAttr(req p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error) {
 	qid, fi, err := l.info()
 	if err != nil {
 		return qid, p9.AttrMask{}, p9.Attr{}, err
