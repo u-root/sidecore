@@ -16,6 +16,8 @@ package main
 
 import (
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -99,6 +101,20 @@ type fsCPIO struct {
 	recs []cpio.Record
 }
 
+// ReadDir implements readdir for fsCPIO.
+// If path is empty, ino 0 (root) is assumed.
+func (f*fsCPIO) ReadDir(path string) ([]os.FileInfo, error)       {
+	ino, ok := f.m[path]
+	verbose("fseraddr %q ino %d %v", path, ino, ok)
+	if ! ok {
+		ino = 0
+	}
+	l := file{Path: ino, fs: f}
+	fi, err := l.ReadDir(0, 1048576) // no idea what to do for size.
+	verbose("%v, %v", fi, err)
+	return fi, err
+}
+
 func (f *fsCPIO) Name() string {
 	return f.recs[0].Name
 }
@@ -108,6 +124,7 @@ func (f *fsCPIO) Size() int64 {
 }
 
 func (f *fsCPIO) Mode() os.FileMode {
+	verbose("fsCPIO mode: %#x", f.recs[0].Mode)
 	return os.FileMode(f.recs[0].Mode)
 }
 
@@ -116,12 +133,12 @@ func (f *fsCPIO) ModTime() time.Time {
 }
 
 func (f *fsCPIO) IsDir() bool {
+	verbose("fsCPIO mode: true")
 	return true
 }
 
 func (f *fsCPIO) Sys() any {
 	return nil
-
 }
 
 var _ billy.Filesystem = &fsCPIO{}
@@ -132,10 +149,42 @@ type file struct {
 	fileFail
 	ok
 	fs   *fsCPIO
-	path uint64
+	Path uint64
 }
 
 var _ billy.File = &file{}
+
+// fstat implements fs.FileInfo. Arguably, cpio.Record should.
+type fstat struct {
+	*cpio.Record
+}
+
+func (f *fstat) Name() string {
+	verbose("file Name(): rec %v", f.Record)
+	return path.Base(f.Record.Name)
+}
+
+func (f *fstat) Size() int64 {
+	return int64(f.FileSize)
+}
+
+func (f *fstat) Mode() os.FileMode {
+	verbose("fstat mode: %#x", f.Record.Mode)
+	return os.FileMode(f.Record.Mode)
+}
+
+func (f *fstat) ModTime() time.Time {
+	return time.Now()
+}
+
+func (f *fstat) IsDir() bool {
+	verbose("fstat mode: %v", f.Mode() & cpio.S_IFDIR == cpio.S_IFDIR)
+	return f.Mode() & cpio.S_IFDIR == cpio.S_IFDIR
+}
+
+func (f *fstat) Sys() any {
+	return nil
+}
 
 // NewfsCPIO returns a fsCPIO, properly initialized.
 func NewfsCPIO(c string) (*fsCPIO, error) {
@@ -173,15 +222,24 @@ func NewfsCPIO(c string) (*fsCPIO, error) {
 }
 
 func (fs *fsCPIO) Stat(filename string) (os.FileInfo, error) {
-	return fs, nil
+	verbose("fsCPIO stat %q", filename)
+	if len(filename) == 0 {
+		return &fstat{Record:&fs.recs[0]}, nil
+	}
+	ino, ok := fs.m[filename]
+	verbose("fseraddr %q ino %d %v", filename, ino, ok)
+	if ! ok {
+		return nil, os.ErrNotExist
+	}
+	return  &fstat{Record:&fs.recs[ino]}, nil
 }
 
 func (l *file) rec() (*cpio.Record, error) {
-	if int(l.path) > len(l.fs.recs) {
+	if int(l.Path) > len(l.fs.recs) {
 		return nil, os.ErrNotExist
 	}
-	v("cpio:rec for %v is %v", l, l.fs.recs[l.path])
-	return &l.fs.recs[l.path], nil
+	v("cpio:rec for %v is %v", l, l.fs.recs[l.Path])
+	return &l.fs.recs[l.Path], nil
 }
 
 // Read implements p9.File.ReadAt.
@@ -198,8 +256,10 @@ func (l *file) WriteAt(p []byte, offset int64) (int, error) {
 	return -1, os.ErrPermission
 }
 
+// readdir returns a slice of indices for a directory.
+// See commend below as to why it must be a slice, not a range.
 func (l *file) readdir() ([]uint64, error) {
-	verbose("cpio:readdir at %d", l.path)
+	verbose("file:readdir at %d", l.Path)
 	r, err := l.rec()
 	if err != nil {
 		return nil, err
@@ -211,7 +271,7 @@ func (l *file) readdir() ([]uint64, error) {
 	// This can not be returned as a range as we do not want
 	// contents of all subdirs.
 	var list []uint64
-	for i, r := range l.fs.recs[l.path+1:] {
+	for i, r := range l.fs.recs[l.Path+1:] {
 		// filepath.Rel fails, we're done here.
 		b, err := filepath.Rel(dn, r.Name)
 		if err != nil {
@@ -223,17 +283,20 @@ func (l *file) readdir() ([]uint64, error) {
 			continue
 		}
 		verbose("cpio:readdir: %v", i)
-		list = append(list, uint64(i)+l.path+1)
+		list = append(list, uint64(i)+l.Path+1)
 	}
 	return list, nil
 }
 
-/*
-// Readdir implements p9.File.Readdir.
+// ReadDir implements ReadDir.
 // This is a bit of a mess in cpio, but the good news is that
 // files will be in some sort of order ...
-func (l *file) Readdir(offset uint64, count uint32) (p9.Dirents, error) {
-/*
+func (l *file) ReadDir(offset uint64, count uint32) ([]fs.FileInfo, error) {
+	verbose("file readdir")
+	rec, err := l.rec()
+	if err != nil {
+		return nil, err
+	}
 	list, err := l.readdir()
 	if err != nil {
 		return nil, err
@@ -242,39 +305,24 @@ func (l *file) Readdir(offset uint64, count uint32) (p9.Dirents, error) {
 		return nil, io.EOF
 	}
 	verbose("cpio:readdir list %v", list)
-	var dirents p9.Dirents
-	dirents = append(dirents, p9.Dirent{
-		QID:    qid,
-		Type:   qid.Type,
-		Name:   ".",
-		Offset: l.path,
-	})
-	verbose("cpio:add path %d '.'", l.path)
-	//log.Printf("cpio:readdir %q returns %d entries start at offset %d", l.path, len(fi), offset)
+	dirents := make([]os.FileInfo, 0, len(list)+1)
+	dirents = append(dirents, &fstat{Record:rec})
+	verbose("cpio:add path %d '.'", l.Path)
+	//verbose("cpio:readdir %q returns %d entries start at offset %d", l.Path, len(fi), offset)
 	for _, i := range list[offset:] {
-		entry := file{path: i, fs: l.fs}
-		qid, _, err := entry.info()
-		if err != nil {
-			continue
-		}
+		entry := file{Path: i + offset, fs: l.fs}
 		r, err := entry.rec()
 		if err != nil {
 			continue
 		}
-		verbose("cpio:add path %d %q", i, filepath.Base(r.Info.Name))
-		dirents = append(dirents, p9.Dirent{
-			QID:    qid,
-			Type:   qid.Type,
-			Name:   filepath.Base(r.Info.Name),
-			Offset: i,
-		})
+		verbose("cpio:add path %d %q", i + offset, filepath.Base(r.Info.Name))
+		dirents = append(dirents, &fstat{Record: r})
 	}
 
 	verbose("cpio:readdir:return %v, nil", dirents)
 	return dirents, nil
 
 }
-*/
 // Readlink implements p9.File.Readlink.
 func (l *file) Readlink() (string, error) {
 	v("cpio:readlinkat:%v", l)
@@ -291,36 +339,6 @@ func (l *file) Readlink() (string, error) {
 	v("cpio:readlink: %q", string(link))
 	return string(link), nil
 }
-
-/*
-// GetAttr implements p9.File.GetAttr.
-//
-// Not fully implemented.
-func (l *file) GetAttr(req p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error) {
-	qid, fi, err := l.info()
-	if err != nil {
-		return qid, p9.AttrMask{}, p9.Attr{}, err
-	}
-
-	//you are not getting symlink!
-	attr := p9.Attr{
-		Mode:             p9.FileMode(fi.Mode),
-		UID:              p9.UID(fi.UID),
-		GID:              p9.GID(fi.GID),
-		NLink:            p9.NLink(fi.NLink),
-		RDev:             p9.Dev(fi.Dev),
-		Size:             uint64(fi.FileSize),
-		BlockSize:        uint64(4096),
-		Blocks:           uint64(fi.FileSize / 4096),
-		ATimeSeconds:     uint64(0),
-		ATimeNanoSeconds: uint64(0),
-		MTimeSeconds:     uint64(fi.MTime),
-		MTimeNanoSeconds: uint64(0),
-		CTimeSeconds:     0,
-		CTimeNanoSeconds: 0,
-	}
-}
-*/
 
 // ROFS is an intercepter for the filesystem indicating it should
 // be read only. The undelrying billy.Memfs indicates it supports
