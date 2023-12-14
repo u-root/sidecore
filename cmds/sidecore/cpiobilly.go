@@ -99,6 +99,8 @@ type fsCPIO struct {
 	recs []cpio.Record
 }
 
+func (f*fsCPIO) ReadDir(path string) ([]os.FileInfo, error)       { panic("fscpio readdir"); return nil, os.ErrInvalid }
+
 func (f *fsCPIO) Name() string {
 	return f.recs[0].Name
 }
@@ -121,7 +123,6 @@ func (f *fsCPIO) IsDir() bool {
 
 func (f *fsCPIO) Sys() any {
 	return nil
-
 }
 
 var _ billy.Filesystem = &fsCPIO{}
@@ -136,6 +137,35 @@ type file struct {
 }
 
 var _ billy.File = &file{}
+
+// fstat implements fs.FileInfo. Arguably, cpio.Record should.
+type fstat struct {
+	cpio.Record
+}
+
+func (f *fstat) Name() string {
+	return f.Name()
+}
+
+func (f *fstat) Size() int64 {
+	return int64(f.FileSize)
+}
+
+func (f *fstat) Mode() os.FileMode {
+	return f.Mode()
+}
+
+func (f *fstat) ModTime() time.Time {
+	return time.Now()
+}
+
+func (f *fstat) IsDir() bool {
+	return true
+}
+
+func (f *fstat) Sys() any {
+	return nil
+}
 
 // NewfsCPIO returns a fsCPIO, properly initialized.
 func NewfsCPIO(c string) (*fsCPIO, error) {
@@ -232,8 +262,7 @@ func (l *file) readdir() ([]uint64, error) {
 // Readdir implements p9.File.Readdir.
 // This is a bit of a mess in cpio, but the good news is that
 // files will be in some sort of order ...
-func (l *file) Readdir(offset uint64, count uint32) (p9.Dirents, error) {
-/*
+func (l *file) Readdir(offset uint64, count uint32) ([]fs.FileInfo, error) {
 	list, err := l.readdir()
 	if err != nil {
 		return nil, err
@@ -242,7 +271,7 @@ func (l *file) Readdir(offset uint64, count uint32) (p9.Dirents, error) {
 		return nil, io.EOF
 	}
 	verbose("cpio:readdir list %v", list)
-	var dirents p9.Dirents
+	var dirents fstat
 	dirents = append(dirents, p9.Dirent{
 		QID:    qid,
 		Type:   qid.Type,
