@@ -16,6 +16,8 @@ package main
 
 import (
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -99,7 +101,15 @@ type fsCPIO struct {
 	recs []cpio.Record
 }
 
-func (f*fsCPIO) ReadDir(path string) ([]os.FileInfo, error)       { panic("fscpio readdir"); return nil, os.ErrInvalid }
+func (f*fsCPIO) ReadDir(path string) ([]os.FileInfo, error)       {
+	ino, ok := f.m[path]
+	if ! ok {
+		return nil, fs.ErrNotExist
+	}
+	l := file{path: ino, fs: f}
+	fi, err := l.ReadDir(0, 1048576) // no idea what to do for size.
+	return fi, err
+}
 
 func (f *fsCPIO) Name() string {
 	return f.recs[0].Name
@@ -140,7 +150,7 @@ var _ billy.File = &file{}
 
 // fstat implements fs.FileInfo. Arguably, cpio.Record should.
 type fstat struct {
-	cpio.Record
+	*cpio.Record
 }
 
 func (f *fstat) Name() string {
@@ -160,7 +170,7 @@ func (f *fstat) ModTime() time.Time {
 }
 
 func (f *fstat) IsDir() bool {
-	return true
+	return f.Mode() & cpio.S_IFDIR == cpio.S_IFDIR
 }
 
 func (f *fstat) Sys() any {
@@ -228,6 +238,8 @@ func (l *file) WriteAt(p []byte, offset int64) (int, error) {
 	return -1, os.ErrPermission
 }
 
+// readdir returns a slice of indices for a directory.
+// See commend below as to why it must be a slice, not a range.
 func (l *file) readdir() ([]uint64, error) {
 	verbose("cpio:readdir at %d", l.path)
 	r, err := l.rec()
@@ -258,11 +270,14 @@ func (l *file) readdir() ([]uint64, error) {
 	return list, nil
 }
 
-/*
-// Readdir implements p9.File.Readdir.
+// ReadDir implements ReadDir.
 // This is a bit of a mess in cpio, but the good news is that
 // files will be in some sort of order ...
-func (l *file) Readdir(offset uint64, count uint32) ([]fs.FileInfo, error) {
+func (l *file) ReadDir(offset uint64, count uint32) ([]fs.FileInfo, error) {
+	rec, err := l.rec()
+	if err != nil {
+		return nil, err
+	}
 	list, err := l.readdir()
 	if err != nil {
 		return nil, err
@@ -271,39 +286,24 @@ func (l *file) Readdir(offset uint64, count uint32) ([]fs.FileInfo, error) {
 		return nil, io.EOF
 	}
 	verbose("cpio:readdir list %v", list)
-	var dirents fstat
-	dirents = append(dirents, p9.Dirent{
-		QID:    qid,
-		Type:   qid.Type,
-		Name:   ".",
-		Offset: l.path,
-	})
+	dirents := make([]os.FileInfo, 0, len(list)+1)
+	dirents = append(dirents, &fstat{Record:rec})
 	verbose("cpio:add path %d '.'", l.path)
 	//log.Printf("cpio:readdir %q returns %d entries start at offset %d", l.path, len(fi), offset)
 	for _, i := range list[offset:] {
 		entry := file{path: i, fs: l.fs}
-		qid, _, err := entry.info()
-		if err != nil {
-			continue
-		}
 		r, err := entry.rec()
 		if err != nil {
 			continue
 		}
 		verbose("cpio:add path %d %q", i, filepath.Base(r.Info.Name))
-		dirents = append(dirents, p9.Dirent{
-			QID:    qid,
-			Type:   qid.Type,
-			Name:   filepath.Base(r.Info.Name),
-			Offset: i,
-		})
+		dirents = append(dirents, &fstat{Record: rec})
 	}
 
 	verbose("cpio:readdir:return %v, nil", dirents)
 	return dirents, nil
 
 }
-*/
 // Readlink implements p9.File.Readlink.
 func (l *file) Readlink() (string, error) {
 	v("cpio:readlinkat:%v", l)
