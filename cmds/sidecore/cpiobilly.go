@@ -38,11 +38,11 @@ func (*fsCPIO) Root() string {
 func (*no) Create(filename string) (billy.File, error) { return nil, os.ErrInvalid }
 func (*no) Open(filename string) (billy.File, error)   { return nil, os.ErrInvalid }
 func (*no) OpenFile(filename string, flag int, perm os.FileMode) (billy.File, error) {
-	return nil, os.ErrInvalid
+	return nil, os.ErrPermission
 }
 func (*no) Stat(filename string) (os.FileInfo, error) { return nil, os.ErrInvalid }
-func (*no) Rename(oldpath, newpath string) error      { return os.ErrInvalid }
-func (*no) Remove(filename string) error              { return os.ErrInvalid }
+func (*no) Rename(oldpath, newpath string) error      { return os.ErrPermission }
+func (*no) Remove(filename string) error              { return os.ErrPermission }
 func (*no) Join(elem ...string) string                { return path.Join(elem...) }
 
 // TempFile
@@ -55,7 +55,16 @@ func (*no) MkdirAll(filename string, perm os.FileMode) error { return os.ErrPerm
 // Symlink
 func (*no) Lstat(filename string) (os.FileInfo, error) { panic("Lstat"); return nil, os.ErrInvalid }
 func (*no) Symlink(target, link string) error          { return os.ErrPermission }
-func (*no) Readlink(link string) (string, error)       { panic("readlink"); return "", os.ErrPermission }
+func (*no) Readlink(link string) (string, error)       { panic("readlink"); return "", os.ErrInvalid }
+
+// File
+func (*no) Name() string {panic("Name"); return ""}
+func (*no)	Lock() error {return nil}
+func (*no)	Unlock() error {return nil}
+func (*no)	Truncate(size int64) error { return os.ErrPermission}
+
+type ok struct {}
+func (*ok) Close() error {return nil}
 
 type fsCPIO struct {
 	no
@@ -69,10 +78,13 @@ var _ billy.Filesystem = &fsCPIO{}
 
 // A file is a server and an index into the cpio records.
 type file struct {
+	no
+	ok
 	fs   *fsCPIO
 	path uint64
 }
 
+var _ billy.File= &file{}
 // NewfsCPIO returns a fsCPIO, properly initialized.
 func NewfsCPIO(c string) (*fsCPIO, error) {
 	f, err := os.Open(c)
