@@ -16,16 +16,11 @@ package main
 
 import (
 	"fmt"
-	"io"
-	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
-	"syscall"
 
 	"github.com/go-git/go-billy/v5"
-	"github.com/hugelgupf/p9/fsimpl/templatefs"
-	"github.com/hugelgupf/p9/p9"
 	"github.com/u-root/u-root/pkg/cpio"
 )
 
@@ -36,7 +31,7 @@ func (*no) Chroot(_ string) (billy.Filesystem, error) {
 	return nil, os.ErrInvalid
 }
 
-func (*no) Root() string {
+func (*fsCPIO) Root() string {
 	return "/" // not os.PathSeparator; this is cpio.
 }
 
@@ -45,23 +40,22 @@ func (*no) Open(filename string) (billy.File, error)   { return nil, os.ErrInval
 func (*no) OpenFile(filename string, flag int, perm os.FileMode) (billy.File, error) {
 	return nil, os.ErrInvalid
 }
-func (*no) Stat(filename string) (os.FileInfo, error)       { return nil, os.ErrInvalid }
-func (*no) Rename(oldpath, newpath string) error            { return os.ErrInvalid }
-func (*no) Remove(filename string) error                    { return os.ErrInvalid }
-func (*no) Join(elem ...string) string                      { return path.Join(elem...) }
+func (*no) Stat(filename string) (os.FileInfo, error) { return nil, os.ErrInvalid }
+func (*no) Rename(oldpath, newpath string) error      { return os.ErrInvalid }
+func (*no) Remove(filename string) error              { return os.ErrInvalid }
+func (*no) Join(elem ...string) string                { return path.Join(elem...) }
 
 // TempFile
 func (*no) TempFile(dir, prefix string) (billy.File, error) { return nil, os.ErrPermission }
 
 // Dir
-func (*no) 	ReadDir(path string) ([]os.FileInfo, error) { panic("readdir"); return nil, os.ErrInvalid}
-func (*no)	MkdirAll(filename string, perm os.FileMode) error {return os.ErrPermission}
+func (*no) ReadDir(path string) ([]os.FileInfo, error)       { panic("readdir"); return nil, os.ErrInvalid }
+func (*no) MkdirAll(filename string, perm os.FileMode) error { return os.ErrPermission }
 
 // Symlink
-func (*no)	Lstat(filename string) (os.FileInfo, error) {panic("Lstat") ; return nil, os.ErrInvalid}
-func (*no)	Symlink(target, link string) error {return os.ErrPermission}
-func (*no)	Readlink(link string) (string, error) {panic("readlink") ; return "", os.ErrPermission}
-
+func (*no) Lstat(filename string) (os.FileInfo, error) { panic("Lstat"); return nil, os.ErrInvalid }
+func (*no) Symlink(target, link string) error          { return os.ErrPermission }
+func (*no) Readlink(link string) (string, error)       { panic("readlink"); return "", os.ErrPermission }
 
 type fsCPIO struct {
 	no
@@ -73,16 +67,8 @@ type fsCPIO struct {
 
 var _ billy.Filesystem = &fsCPIO{}
 
-// fsCPIOFile defines a FID.
-// It kind of sucks because it has a pointer
-// for every FID. Luckily they go away when clunked.
+// A file is a server and an index into the cpio records.
 type file struct {
-	p9.DefaultWalkGetAttr
-	templatefs.XattrUnimplemented
-	templatefs.NilCloser
-	templatefs.NilSyncer
-	templatefs.NoopRenamed
-
 	fs   *fsCPIO
 	path uint64
 }
@@ -122,117 +108,12 @@ func NewfsCPIO(c string) (*fsCPIO, error) {
 	return &fsCPIO{file: f, rr: rr, recs: recs, m: m}, nil
 }
 
-// Attach implements p9.Attacher.Attach.
-// Only works for root.
-func (s *fsCPIO) Attach() (p9.File, error) {
-	return &file{fs: s, path: 0}, nil
-}
-
 func (l *file) rec() (*cpio.Record, error) {
 	if int(l.path) > len(l.fs.recs) {
 		return nil, os.ErrNotExist
 	}
 	v("cpio:rec for %v is %v", l, l.fs.recs[l.path])
 	return &l.fs.recs[l.path], nil
-}
-
-// info constructs a QID for this file.
-func (l *file) info() (p9.QID, *cpio.Info, error) {
-	var qid p9.QID
-
-	r, err := l.rec()
-	if err != nil {
-		return qid, nil, err
-	}
-
-	fi := r.Info
-	// Construct the QID type.
-	var m = fs.FileMode(fi.Mode)
-	qid.Type = p9.ModeFromOS(m).QIDType()
-	// That above sequence should work. Does not. Always returns 0.
-	// I've stared at the p9 code and I no longer understand why the
-	// tests even pass.
-	switch fi.Mode & 0xf000 {
-	case 0xa000:
-		qid.Type = p9.TypeSymlink
-	case 0x4000:
-		qid.Type = p9.TypeDir
-	}
-	// Save the path from the Ino.
-	qid.Path = l.path
-	return qid, &fi, nil
-}
-
-// Walk implements p9.File.Walk.
-func (l *file) Walk(names []string) ([]p9.QID, p9.File, error) {
-	r, err := l.rec()
-	if err != nil {
-		return nil, nil, err
-	}
-	verbose("cpio:starting record for %v is %v", l, r)
-	var qids []p9.QID
-	last := &file{path: l.path, fs: l.fs}
-	// If the names are empty we return info for l
-	// An extra stat is never hurtful; all servers
-	// are a bundle of race conditions and there's no need
-	// to make things worse.
-	if len(names) == 0 {
-		c := &file{path: last.path, fs: l.fs}
-		qid, fi, err := c.info()
-		verbose("cpio:Walk to %v: %v, %v, %v", *c, qid, fi, err)
-		if err != nil {
-			return nil, nil, err
-		}
-		qids = append(qids, qid)
-		verbose("cpio:Walk: return %v, %v, nil", qids, last)
-		return qids, last, nil
-	}
-	verbose("cpio:Walk: %v", names)
-	// I've messed this up a few times.
-	// If you start with the QID for r, you will be adding '.', which is
-	// likely not what you want. the first step is to do the lookup of the
-	// first name component.
-	var fullpath string
-	if r.Name != "." {
-		fullpath = r.Name
-	}
-	for _, name := range names {
-		fullpath = filepath.Join(fullpath, name)
-		ix, ok := l.fs.m[fullpath]
-		verbose("cpio:Walk %q get %v, %v", fullpath, ix, ok)
-		if !ok {
-			return nil, nil, os.ErrNotExist
-		}
-		c := &file{path: ix, fs: l.fs}
-		qid, fi, err := c.info()
-		verbose("cpio:Walk to %q from %v: %v, %v, %v", fullpath, r, qid, fi, ok)
-		if err != nil {
-			return nil, nil, err
-		}
-		qids = append(qids, qid)
-		last.path = ix
-	}
-	verbose("cpio:Walk: return %v, %v, nil", qids, last)
-	return qids, last, nil
-}
-
-// Open implements p9.File.Open.
-func (l *file) Open(mode p9.OpenFlags) (p9.QID, uint32, error) {
-	qid, fi, err := l.info()
-	verbose("cpio:Open %v: (%v, %v, %v", *l, qid, fi, err)
-	if err != nil {
-		return qid, 0, err
-	}
-
-	if mode.Mode() != p9.ReadOnly {
-		return qid, 0, os.ErrPermission
-	}
-
-	// Do the actual open.
-	// from DIOD
-	// if iounit=0, v9fs will use msize-P9_IOHDRSZ
-	verbose("cpio:Open returns %v, 0, nil", qid)
-	return qid, 0, nil
 }
 
 // Read implements p9.File.ReadAt.
@@ -247,32 +128,6 @@ func (l *file) ReadAt(p []byte, offset int64) (int, error) {
 // Write implements p9.File.WriteAt.
 func (l *file) WriteAt(p []byte, offset int64) (int, error) {
 	return -1, os.ErrPermission
-}
-
-// Create implements p9.File.Create.
-func (l *file) Create(name string, mode p9.OpenFlags, permissions p9.FileMode, _ p9.UID, _ p9.GID) (p9.File, p9.QID, uint32, error) {
-	return nil, p9.QID{}, 0, os.ErrPermission
-}
-
-// Mkdir implements p9.File.Mkdir.
-//
-// Not properly implemented.
-func (l *file) Mkdir(name string, permissions p9.FileMode, _ p9.UID, _ p9.GID) (p9.QID, error) {
-	return p9.QID{}, os.ErrPermission
-}
-
-// Symlink implements p9.File.Symlink.
-//
-// Not properly implemented.
-func (l *file) Symlink(oldname string, newname string, _ p9.UID, _ p9.GID) (p9.QID, error) {
-	return p9.QID{}, os.ErrPermission
-}
-
-// Link implements p9.File.Link.
-//
-// Not properly implemented.
-func (l *file) Link(target p9.File, newname string) error {
-	return os.ErrPermission
 }
 
 func (l *file) readdir() ([]uint64, error) {
@@ -304,15 +159,12 @@ func (l *file) readdir() ([]uint64, error) {
 	}
 	return list, nil
 }
-
+/*
 // Readdir implements p9.File.Readdir.
 // This is a bit of a mess in cpio, but the good news is that
 // files will be in some sort of order ...
 func (l *file) Readdir(offset uint64, count uint32) (p9.Dirents, error) {
-	qid, _, err := l.info()
-	if err != nil {
-		return nil, err
-	}
+/*
 	list, err := l.readdir()
 	if err != nil {
 		return nil, err
@@ -351,8 +203,9 @@ func (l *file) Readdir(offset uint64, count uint32) (p9.Dirents, error) {
 
 	verbose("cpio:readdir:return %v, nil", dirents)
 	return dirents, nil
-}
 
+}
+*/
 // Readlink implements p9.File.Readlink.
 func (l *file) Readlink() (string, error) {
 	v("cpio:readlinkat:%v", l)
@@ -370,49 +223,7 @@ func (l *file) Readlink() (string, error) {
 	return string(link), nil
 }
 
-// Flush implements p9.File.Flush.
-func (l *file) Flush() error {
-	return nil
-}
-
-// UnlinkAt implements p9.File.UnlinkAt.
-func (l *file) UnlinkAt(name string, flags uint32) error {
-	return os.ErrPermission
-}
-
-// Mknod implements p9.File.Mknod.
-func (*file) Mknod(name string, mode p9.FileMode, major uint32, minor uint32, _ p9.UID, _ p9.GID) (p9.QID, error) {
-	return p9.QID{}, syscall.ENOSYS
-}
-
-// Rename implements p9.File.Rename.
-func (*file) Rename(directory p9.File, name string) error {
-	return syscall.ENOSYS
-}
-
-// RenameAt implements p9.File.RenameAt.
-// There is no guarantee that there is not a zipslip issue.
-func (l *file) RenameAt(oldName string, newDir p9.File, newName string) error {
-	return syscall.ENOSYS
-}
-
-// StatFS implements p9.File.StatFS.
-//
-// Not implemented.
-func (*file) StatFS() (p9.FSStat, error) {
-	return p9.FSStat{}, syscall.ENOSYS
-}
-
-// SetAttr implements SetAttr.
-func (l *file) SetAttr(mask p9.SetAttrMask, attr p9.SetAttr) error {
-	return os.ErrPermission
-}
-
-// Lock implements lock by doing nothing.
-func (*file) Lock(pid int, locktype p9.LockType, flags p9.LockFlags, start, length uint64, client string) (p9.LockStatus, error) {
-	return p9.LockStatus(0), nil
-}
-
+/*
 // GetAttr implements p9.File.GetAttr.
 //
 // Not fully implemented.
@@ -439,18 +250,5 @@ func (l *file) GetAttr(req p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error) {
 		CTimeSeconds:     0,
 		CTimeNanoSeconds: 0,
 	}
-	valid := p9.AttrMask{
-		Mode:   true,
-		UID:    true,
-		GID:    true,
-		NLink:  true,
-		RDev:   true,
-		Size:   true,
-		Blocks: true,
-		ATime:  true,
-		MTime:  true,
-		CTime:  true,
-	}
-
-	return qid, valid, attr, nil
 }
+*/
