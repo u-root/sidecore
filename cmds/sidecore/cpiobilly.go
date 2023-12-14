@@ -101,13 +101,17 @@ type fsCPIO struct {
 	recs []cpio.Record
 }
 
+// ReadDir implements readdir for fsCPIO.
+// If path is empty, ino 0 (root) is assumed.
 func (f*fsCPIO) ReadDir(path string) ([]os.FileInfo, error)       {
+	verbose("fseraddr %q", path)
 	ino, ok := f.m[path]
 	if ! ok {
-		return nil, fs.ErrNotExist
+		ino = 0
 	}
 	l := file{path: ino, fs: f}
 	fi, err := l.ReadDir(0, 1048576) // no idea what to do for size.
+	verbose("%v, %v", fi, err)
 	return fi, err
 }
 
@@ -120,6 +124,7 @@ func (f *fsCPIO) Size() int64 {
 }
 
 func (f *fsCPIO) Mode() os.FileMode {
+	verbose("fsCPIO mode: %#x", f.recs[0].Mode)
 	return os.FileMode(f.recs[0].Mode)
 }
 
@@ -128,6 +133,7 @@ func (f *fsCPIO) ModTime() time.Time {
 }
 
 func (f *fsCPIO) IsDir() bool {
+	verbose("fsCPIO mode: true")
 	return true
 }
 
@@ -154,7 +160,7 @@ type fstat struct {
 }
 
 func (f *fstat) Name() string {
-	return f.Name()
+	return f.Record.Name
 }
 
 func (f *fstat) Size() int64 {
@@ -162,7 +168,8 @@ func (f *fstat) Size() int64 {
 }
 
 func (f *fstat) Mode() os.FileMode {
-	return f.Mode()
+	verbose("fstat mode: %#x", f.Record.Mode)
+	return os.FileMode(f.Record.Mode)
 }
 
 func (f *fstat) ModTime() time.Time {
@@ -170,6 +177,7 @@ func (f *fstat) ModTime() time.Time {
 }
 
 func (f *fstat) IsDir() bool {
+	verbose("fstat mode: %v", f.Mode() & cpio.S_IFDIR == cpio.S_IFDIR)
 	return f.Mode() & cpio.S_IFDIR == cpio.S_IFDIR
 }
 
@@ -241,7 +249,7 @@ func (l *file) WriteAt(p []byte, offset int64) (int, error) {
 // readdir returns a slice of indices for a directory.
 // See commend below as to why it must be a slice, not a range.
 func (l *file) readdir() ([]uint64, error) {
-	verbose("cpio:readdir at %d", l.path)
+	verbose("file:readdir at %d", l.path)
 	r, err := l.rec()
 	if err != nil {
 		return nil, err
@@ -274,6 +282,7 @@ func (l *file) readdir() ([]uint64, error) {
 // This is a bit of a mess in cpio, but the good news is that
 // files will be in some sort of order ...
 func (l *file) ReadDir(offset uint64, count uint32) ([]fs.FileInfo, error) {
+	verbose("file readdir")
 	rec, err := l.rec()
 	if err != nil {
 		return nil, err
@@ -289,7 +298,7 @@ func (l *file) ReadDir(offset uint64, count uint32) ([]fs.FileInfo, error) {
 	dirents := make([]os.FileInfo, 0, len(list)+1)
 	dirents = append(dirents, &fstat{Record:rec})
 	verbose("cpio:add path %d '.'", l.path)
-	//log.Printf("cpio:readdir %q returns %d entries start at offset %d", l.path, len(fi), offset)
+	//verbose("cpio:readdir %q returns %d entries start at offset %d", l.path, len(fi), offset)
 	for _, i := range list[offset:] {
 		entry := file{path: i, fs: l.fs}
 		r, err := entry.rec()
