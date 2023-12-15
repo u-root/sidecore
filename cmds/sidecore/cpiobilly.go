@@ -221,6 +221,7 @@ func NewfsCPIO(c string) (*fsCPIO, error) {
 }
 
 func (fs *fsCPIO) Stat(filename string) (os.FileInfo, error) {
+	verbose("fsCPIO stat %q", filename)
 	return fs, nil
 }
 
@@ -306,7 +307,7 @@ func (l *file) ReadDir(offset uint64, count uint32) ([]fs.FileInfo, error) {
 			continue
 		}
 		verbose("cpio:add path %d %q", i, filepath.Base(r.Info.Name))
-		dirents = append(dirents, &fstat{Record: rec})
+		dirents = append(dirents, &fstat{Record: r})
 	}
 
 	verbose("cpio:readdir:return %v, nil", dirents)
