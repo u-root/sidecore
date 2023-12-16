@@ -104,12 +104,12 @@ type fsCPIO struct {
 // ReadDir implements readdir for fsCPIO.
 // If path is empty, ino 0 (root) is assumed.
 func (f*fsCPIO) ReadDir(path string) ([]os.FileInfo, error)       {
-	verbose("fseraddr %q", path)
 	ino, ok := f.m[path]
+	verbose("fseraddr %q ino %d %v", path, ino, ok)
 	if ! ok {
 		ino = 0
 	}
-	l := file{path: ino, fs: f}
+	l := file{Path: ino, fs: f}
 	fi, err := l.ReadDir(0, 1048576) // no idea what to do for size.
 	verbose("%v, %v", fi, err)
 	return fi, err
@@ -149,7 +149,7 @@ type file struct {
 	fileFail
 	ok
 	fs   *fsCPIO
-	path uint64
+	Path uint64
 }
 
 var _ billy.File = &file{}
@@ -160,7 +160,8 @@ type fstat struct {
 }
 
 func (f *fstat) Name() string {
-	return f.Record.Name
+	verbose("file Name(): rec %v", f.Record)
+	return path.Base(f.Record.Name)
 }
 
 func (f *fstat) Size() int64 {
@@ -226,11 +227,11 @@ func (fs *fsCPIO) Stat(filename string) (os.FileInfo, error) {
 }
 
 func (l *file) rec() (*cpio.Record, error) {
-	if int(l.path) > len(l.fs.recs) {
+	if int(l.Path) > len(l.fs.recs) {
 		return nil, os.ErrNotExist
 	}
-	v("cpio:rec for %v is %v", l, l.fs.recs[l.path])
-	return &l.fs.recs[l.path], nil
+	v("cpio:rec for %v is %v", l, l.fs.recs[l.Path])
+	return &l.fs.recs[l.Path], nil
 }
 
 // Read implements p9.File.ReadAt.
@@ -250,7 +251,7 @@ func (l *file) WriteAt(p []byte, offset int64) (int, error) {
 // readdir returns a slice of indices for a directory.
 // See commend below as to why it must be a slice, not a range.
 func (l *file) readdir() ([]uint64, error) {
-	verbose("file:readdir at %d", l.path)
+	verbose("file:readdir at %d", l.Path)
 	r, err := l.rec()
 	if err != nil {
 		return nil, err
@@ -262,7 +263,7 @@ func (l *file) readdir() ([]uint64, error) {
 	// This can not be returned as a range as we do not want
 	// contents of all subdirs.
 	var list []uint64
-	for i, r := range l.fs.recs[l.path+1:] {
+	for i, r := range l.fs.recs[l.Path+1:] {
 		// filepath.Rel fails, we're done here.
 		b, err := filepath.Rel(dn, r.Name)
 		if err != nil {
@@ -274,7 +275,7 @@ func (l *file) readdir() ([]uint64, error) {
 			continue
 		}
 		verbose("cpio:readdir: %v", i)
-		list = append(list, uint64(i)+l.path+1)
+		list = append(list, uint64(i)+l.Path+1)
 	}
 	return list, nil
 }
@@ -298,15 +299,15 @@ func (l *file) ReadDir(offset uint64, count uint32) ([]fs.FileInfo, error) {
 	verbose("cpio:readdir list %v", list)
 	dirents := make([]os.FileInfo, 0, len(list)+1)
 	dirents = append(dirents, &fstat{Record:rec})
-	verbose("cpio:add path %d '.'", l.path)
-	//verbose("cpio:readdir %q returns %d entries start at offset %d", l.path, len(fi), offset)
+	verbose("cpio:add path %d '.'", l.Path)
+	//verbose("cpio:readdir %q returns %d entries start at offset %d", l.Path, len(fi), offset)
 	for _, i := range list[offset:] {
-		entry := file{path: i, fs: l.fs}
+		entry := file{Path: i + offset, fs: l.fs}
 		r, err := entry.rec()
 		if err != nil {
 			continue
 		}
-		verbose("cpio:add path %d %q", i, filepath.Base(r.Info.Name))
+		verbose("cpio:add path %d %q", i + offset, filepath.Base(r.Info.Name))
 		dirents = append(dirents, &fstat{Record: r})
 	}
 
@@ -330,36 +331,6 @@ func (l *file) Readlink() (string, error) {
 	v("cpio:readlink: %q", string(link))
 	return string(link), nil
 }
-
-/*
-// GetAttr implements p9.File.GetAttr.
-//
-// Not fully implemented.
-func (l *file) GetAttr(req p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error) {
-	qid, fi, err := l.info()
-	if err != nil {
-		return qid, p9.AttrMask{}, p9.Attr{}, err
-	}
-
-	//you are not getting symlink!
-	attr := p9.Attr{
-		Mode:             p9.FileMode(fi.Mode),
-		UID:              p9.UID(fi.UID),
-		GID:              p9.GID(fi.GID),
-		NLink:            p9.NLink(fi.NLink),
-		RDev:             p9.Dev(fi.Dev),
-		Size:             uint64(fi.FileSize),
-		BlockSize:        uint64(4096),
-		Blocks:           uint64(fi.FileSize / 4096),
-		ATimeSeconds:     uint64(0),
-		ATimeNanoSeconds: uint64(0),
-		MTimeSeconds:     uint64(fi.MTime),
-		MTimeNanoSeconds: uint64(0),
-		CTimeSeconds:     0,
-		CTimeNanoSeconds: 0,
-	}
-}
-*/
 
 // ROFS is an intercepter for the filesystem indicating it should
 // be read only. The undelrying billy.Memfs indicates it supports

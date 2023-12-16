@@ -342,12 +342,10 @@ func main() {
 	}
 	verbose("home is %q", home)
 	var wg sync.WaitGroup
-	if true {
 	if *srvnfs {
 		wg.Add(1)
 		err := srv();
 		log.Printf("nfs: %v", err)
-	}
 	}
 	// The remote system, for now, is always Linux or a standard Unix (or Plan 9)
 	// It will never be darwin (go argue with Apple)
