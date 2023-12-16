@@ -223,7 +223,15 @@ func NewfsCPIO(c string) (*fsCPIO, error) {
 
 func (fs *fsCPIO) Stat(filename string) (os.FileInfo, error) {
 	verbose("fsCPIO stat %q", filename)
-	return fs, nil
+	if len(filename) == 0 {
+		return &fstat{Record:&fs.recs[0]}, nil
+	}
+	ino, ok := fs.m[filename]
+	verbose("fseraddr %q ino %d %v", filename, ino, ok)
+	if ! ok {
+		return nil, os.ErrNotExist
+	}
+	return  &fstat{Record:&fs.recs[ino]}, nil
 }
 
 func (l *file) rec() (*cpio.Record, error) {
