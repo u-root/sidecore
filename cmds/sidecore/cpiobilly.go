@@ -43,15 +43,10 @@ func (*fsCPIO) Root() string {
 }
 
 func (*no) Create(filename string) (billy.File, error) { return nil, os.ErrInvalid }
-func (*no) Open(filename string) (billy.File, error)   { panic("open"); return nil, os.ErrInvalid }
-func (*no) OpenFile(filename string, flag int, perm os.FileMode) (billy.File, error) {
-	panic("open")
-	return nil, os.ErrPermission
-}
-func (*no) Stat(filename string) (os.FileInfo, error) { panic("stat"); return nil, os.ErrInvalid }
-func (*no) Rename(oldpath, newpath string) error      { return os.ErrPermission }
-func (*no) Remove(filename string) error              { return os.ErrPermission }
-func (*no) Join(elem ...string) string                { return path.Join(elem...) }
+func (*no) Stat(filename string) (os.FileInfo, error)  { panic("stat"); return nil, os.ErrInvalid }
+func (*no) Rename(oldpath, newpath string) error       { return os.ErrPermission }
+func (*no) Remove(filename string) error               { return os.ErrPermission }
+func (*no) Join(elem ...string) string                 { return path.Join(elem...) }
 
 // TempFile
 func (*no) TempFile(dir, prefix string) (billy.File, error) { return nil, os.ErrPermission }
@@ -63,7 +58,6 @@ func (*no) MkdirAll(filename string, perm os.FileMode) error { return os.ErrPerm
 // Symlink
 func (*no) Lstat(filename string) (os.FileInfo, error) { panic("Lstat"); return nil, os.ErrInvalid }
 func (*no) Symlink(target, link string) error          { return os.ErrPermission }
-func (*no) Readlink(link string) (string, error)       { panic("readlink"); return "", os.ErrInvalid }
 
 // File
 func (*no) Name() string              { panic("Name"); return "" }
@@ -103,10 +97,10 @@ type fsCPIO struct {
 
 // ReadDir implements readdir for fsCPIO.
 // If path is empty, ino 0 (root) is assumed.
-func (f*fsCPIO) ReadDir(path string) ([]os.FileInfo, error)       {
+func (f *fsCPIO) ReadDir(path string) ([]os.FileInfo, error) {
 	ino, ok := f.m[path]
 	verbose("fseraddr %q ino %d %v", path, ino, ok)
-	if ! ok {
+	if !ok {
 		ino = 0
 	}
 	l := file{Path: ino, fs: f}
@@ -123,9 +117,40 @@ func (f *fsCPIO) Size() int64 {
 	return int64(f.recs[0].FileSize)
 }
 
+func uToGo(m uint64) os.FileMode {
+	verbose("fsCPIO mode: %#x", m)
+	// the billy API is in terms of go fs values.
+	// We need to map types from Unix to go fs package.
+	// Just hack this together for now, once it works,
+	// we can figure out how to clean it all up.
+	// arguably, cpio package should export its functions.
+	// arguably, Go should too ...
+	u := os.FileMode(m)
+	perm := u & fs.ModePerm
+	// we have to match bits that are not available on windows
+	var t fs.FileMode
+	switch u & 0170000 {
+	case 0010000: //S_IFIFO * named pipe (fifo) */
+		t = fs.ModeNamedPipe
+	case 0020000: //S_IFCHR * character special */
+		t = fs.ModeCharDevice
+	case 0040000: //S_IFDIR * directory */
+		t = fs.ModeDir
+	case 0060000: //S_IFBLK * block special */
+		t = fs.ModeDevice
+	case 0100000: //S_IFREG * regular */
+	case 0120000: //S_IFLNK * symbolic link */
+		t = fs.ModeSymlink
+	}
+	verbose("Mode is %#x", perm|t)
+	verbose("Mode is %v", os.FileMode(perm|t))
+	return os.FileMode(perm | t)
+}
+
 func (f *fsCPIO) Mode() os.FileMode {
-	verbose("fsCPIO mode: %#x", f.recs[0].Mode)
-	return os.FileMode(f.recs[0].Mode)
+	m := uToGo(f.recs[0].Mode)
+	verbose("fsCPIO mode: %v %#x", m, uint64(m))
+	return m
 }
 
 func (f *fsCPIO) ModTime() time.Time {
@@ -139,6 +164,15 @@ func (f *fsCPIO) IsDir() bool {
 
 func (f *fsCPIO) Sys() any {
 	return nil
+}
+
+func (fs *fsCPIO) Readlink(link string) (string, error) {
+	ino, ok := fs.m[link]
+	if !ok {
+		return "", os.ErrNotExist
+	}
+	f := &file{fs: fs, Path: ino}
+	return f.Readlink()
 }
 
 var _ billy.Filesystem = &fsCPIO{}
@@ -169,8 +203,9 @@ func (f *fstat) Size() int64 {
 }
 
 func (f *fstat) Mode() os.FileMode {
-	verbose("fstat mode: %#x", f.Record.Mode)
-	return os.FileMode(f.Record.Mode)
+	m := uToGo(f.Record.Mode)
+	verbose("fstat mode: %v %#x", m, uint64(m))
+	return m
 }
 
 func (f *fstat) ModTime() time.Time {
@@ -178,8 +213,8 @@ func (f *fstat) ModTime() time.Time {
 }
 
 func (f *fstat) IsDir() bool {
-	verbose("fstat mode: %v", f.Mode() & cpio.S_IFDIR == cpio.S_IFDIR)
-	return f.Mode() & cpio.S_IFDIR == cpio.S_IFDIR
+	verbose("fstat mode: %v", f.Mode()&cpio.S_IFDIR == cpio.S_IFDIR)
+	return f.Mode().IsDir()
 }
 
 func (f *fstat) Sys() any {
@@ -224,14 +259,14 @@ func NewfsCPIO(c string) (*fsCPIO, error) {
 func (fs *fsCPIO) Stat(filename string) (os.FileInfo, error) {
 	verbose("fsCPIO stat %q", filename)
 	if len(filename) == 0 {
-		return &fstat{Record:&fs.recs[0]}, nil
+		return &fstat{Record: &fs.recs[0]}, nil
 	}
 	ino, ok := fs.m[filename]
 	verbose("fseraddr %q ino %d %v", filename, ino, ok)
-	if ! ok {
+	if !ok {
 		return nil, os.ErrNotExist
 	}
-	return  &fstat{Record:&fs.recs[ino]}, nil
+	return &fstat{Record: &fs.recs[ino]}, nil
 }
 
 func (l *file) rec() (*cpio.Record, error) {
@@ -240,6 +275,29 @@ func (l *file) rec() (*cpio.Record, error) {
 	}
 	v("cpio:rec for %v is %v", l, l.fs.recs[l.Path])
 	return &l.fs.recs[l.Path], nil
+}
+
+func (f *fsCPIO) lookup(filename string) (*cpio.Record, error) {
+	ino, ok := f.m[filename]
+	verbose("fseraddr %q ino %d %v", filename, ino, ok)
+	if !ok {
+		ino = 0
+	}
+	l := &file{Path: ino, fs: f}
+	return l.rec()
+}
+
+func (fs *fsCPIO) Open(filename string) (billy.File, error) {
+	ino, ok := fs.m[filename]
+	if !ok {
+		return nil, os.ErrNotExist
+	}
+	return &file{fs: fs, Path: ino}, nil
+}
+
+func (*no) OpenFile(filename string, flag int, perm os.FileMode) (billy.File, error) {
+	panic("openfile")
+	return nil, os.ErrPermission
 }
 
 // Read implements p9.File.ReadAt.
@@ -306,7 +364,7 @@ func (l *file) ReadDir(offset uint64, count uint32) ([]fs.FileInfo, error) {
 	}
 	verbose("cpio:readdir list %v", list)
 	dirents := make([]os.FileInfo, 0, len(list)+1)
-	dirents = append(dirents, &fstat{Record:rec})
+	dirents = append(dirents, &fstat{Record: rec})
 	verbose("cpio:add path %d '.'", l.Path)
 	//verbose("cpio:readdir %q returns %d entries start at offset %d", l.Path, len(fi), offset)
 	for _, i := range list[offset:] {
@@ -315,7 +373,7 @@ func (l *file) ReadDir(offset uint64, count uint32) ([]fs.FileInfo, error) {
 		if err != nil {
 			continue
 		}
-		verbose("cpio:add path %d %q", i + offset, filepath.Base(r.Info.Name))
+		verbose("cpio:add path %d %q", i+offset, filepath.Base(r.Info.Name))
 		dirents = append(dirents, &fstat{Record: r})
 	}
 
@@ -323,6 +381,7 @@ func (l *file) ReadDir(offset uint64, count uint32) ([]fs.FileInfo, error) {
 	return dirents, nil
 
 }
+
 // Readlink implements p9.File.Readlink.
 func (l *file) Readlink() (string, error) {
 	v("cpio:readlinkat:%v", l)

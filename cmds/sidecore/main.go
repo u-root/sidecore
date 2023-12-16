@@ -344,7 +344,7 @@ func main() {
 	var wg sync.WaitGroup
 	if *srvnfs {
 		wg.Add(1)
-		err := srv();
+		err := srv()
 		log.Printf("nfs: %v", err)
 	}
 	// The remote system, for now, is always Linux or a standard Unix (or Plan 9)
@@ -403,11 +403,11 @@ func main() {
 	hostKeyFile := os.Getenv("SIDECORE_HOSTKEYFILE")
 
 	if false {
-	if *srvnfs {
-		wg.Add(1)
-		err := srv();
-		log.Printf("nfs: %v", err)
-	}
+		if *srvnfs {
+			wg.Add(1)
+			err := srv()
+			log.Printf("nfs: %v", err)
+		}
 	}
 	for _, cpu := range cpus {
 		var err error
