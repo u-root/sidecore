@@ -58,7 +58,6 @@ func (*no) MkdirAll(filename string, perm os.FileMode) error { return os.ErrPerm
 // Symlink
 func (*no) Lstat(filename string) (os.FileInfo, error) { panic("Lstat"); return nil, os.ErrInvalid }
 func (*no) Symlink(target, link string) error          { return os.ErrPermission }
-func (*no) Readlink(link string) (string, error)       { panic("readlink"); return "", os.ErrInvalid }
 
 // File
 func (*no) Name() string              { panic("Name"); return "" }
@@ -143,8 +142,8 @@ func uToGo(m uint64) os.FileMode {
 	case 0120000: //S_IFLNK * symbolic link */
 		t = fs.ModeSymlink
 	}
-	verbose("Mode is %#x", perm | t)
-	verbose("Mode is %v", os.FileMode(perm | t))
+	verbose("Mode is %#x", perm|t)
+	verbose("Mode is %v", os.FileMode(perm|t))
 	return os.FileMode(perm | t)
 }
 
@@ -165,6 +164,15 @@ func (f *fsCPIO) IsDir() bool {
 
 func (f *fsCPIO) Sys() any {
 	return nil
+}
+
+func (fs *fsCPIO) Readlink(link string) (string, error) {
+	ino, ok := fs.m[link]
+	if !ok {
+		return "", os.ErrNotExist
+	}
+	f := &file{fs: fs, Path: ino}
+	return f.Readlink()
 }
 
 var _ billy.Filesystem = &fsCPIO{}
