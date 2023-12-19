@@ -100,7 +100,7 @@ func flags(arch string) ([]cpu, []string, error) {
 		v = ulog.Log.Printf
 	}
 	args := flag.Args()
-	host := ds.DsDefault
+	host := ds.Default
 
 	a := []string{}
 	if len(args) > 0 {
@@ -108,7 +108,7 @@ func flags(arch string) ([]cpu, []string, error) {
 		a = args[1:]
 	}
 	if host == "." {
-		host = fmt.Sprintf("%s&arch=%s", ds.DsDefault, arch)
+		host = fmt.Sprintf("%s&arch=%s", ds.Default, arch)
 		v("host specification is %q", host)
 	}
 
