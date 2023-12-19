@@ -120,7 +120,6 @@ func (f *fsCPIO) Size() int64 {
 
 func uToGo(m uint64) os.FileMode {
 	verbose("fsCPIO mode: %#x", m)
-	return os.FileMode(m)
 	// the billy API is in terms of go fs values.
 	// We need to map types from Unix to go fs package.
 	// Just hack this together for now, once it works,
@@ -207,7 +206,7 @@ func (f *fstat) ModTime() time.Time {
 
 func (f *fstat) IsDir() bool {
 	verbose("fstat mode: %v", f.Mode()&cpio.S_IFDIR == cpio.S_IFDIR)
-	return f.Mode()&cpio.S_IFDIR == cpio.S_IFDIR
+	return f.Mode().IsDir()
 }
 
 func (f *fstat) Sys() any {
