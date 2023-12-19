@@ -120,7 +120,31 @@ func (f *fsCPIO) Size() int64 {
 
 func (f *fsCPIO) Mode() os.FileMode {
 	verbose("fsCPIO mode: %#x", f.recs[0].Mode)
-	return os.FileMode(f.recs[0].Mode)
+	// the billy API is in terms of go fs values.
+	// We need to map types from Unix to go fs package.
+	// Just hack this together for now, once it works,
+	// we can figure out how to clean it all up.
+	// arguably, cpio package should export its functions.
+	// arguably, Go should too ...
+	u := os.FileMode(f.recs[0].Mode)
+	perm := u & fs.ModePerm
+	// we have to match bits that are not available on windows
+	var t fs.FileMode
+	switch u & 0170000 {
+	case 0010000: //S_IFIFO * named pipe (fifo) */
+		t = fs.ModeNamedPipe
+	case 0020000: //S_IFCHR * character special */
+		t = fs.ModeCharDevice
+	case 0040000: //S_IFDIR * directory */
+		t = fs.ModeDir
+	case 0060000: //S_IFBLK * block special */
+		t = fs.ModeDevice
+	case 0100000: //S_IFREG * regular */
+	case 0120000: //S_IFLNK * symbolic link */
+		t = fs.ModeSymlink
+	}
+	verbose("Mode is %#x", perm | t)
+	return os.FileMode(perm | t)
 }
 
 func (f *fsCPIO) ModTime() time.Time {
