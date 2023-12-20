@@ -397,12 +397,14 @@ func main() {
 	keyFile := os.Getenv("SIDECORE_KEYFILE")
 	hostKeyFile := os.Getenv("SIDECORE_HOSTKEYFILE")
 
-	if false {
-		if *srvnfs {
-			wg.Add(1)
-			err := srv()
+	if *srvnfs {
+		wg.Add(1)
+		var err error
+		go func() {
+			err = srv()
 			log.Printf("nfs: %v", err)
-		}
+			wg.Done()
+		}()
 	}
 	for _, cpu := range cpus {
 		var err error
