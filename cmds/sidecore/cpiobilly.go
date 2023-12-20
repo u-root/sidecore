@@ -364,7 +364,9 @@ func (l *file) ReadDir(offset uint64, count uint32) ([]fs.FileInfo, error) {
 	}
 	verbose("cpio:readdir list %v", list)
 	dirents := make([]os.FileInfo, 0, len(list)+1)
-	dirents = append(dirents, &fstat{Record: rec})
+	dot := *rec
+	dot.Name = "."
+	dirents = append(dirents, &fstat{Record: &dot})
 	verbose("cpio:add path %d '.'", l.Path)
 	//verbose("cpio:readdir %q returns %d entries start at offset %d", l.Path, len(fi), offset)
 	for _, i := range list[offset:] {
