@@ -401,7 +401,7 @@ func main() {
 		wg.Add(1)
 		var err error
 		go func() {
-			err = srv()
+			err = srv(container)
 			log.Printf("nfs: %v", err)
 			wg.Done()
 		}()

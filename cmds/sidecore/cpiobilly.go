@@ -415,14 +415,14 @@ func (ROFS) Capabilities() billy.Capability {
 	return billy.ReadCapability
 }
 
-func srv() error {
+func srv(n string) error {
 	listener, err := net.Listen("tcp", ":2049")
 	if err != nil {
 		return err
 	}
 	fmt.Printf("Server running at %s\n", listener.Addr())
 
-	mem, err := NewfsCPIO("data/a.cpio")
+	mem, err := NewfsCPIO(n)
 	if err != nil {
 		return err
 	}
