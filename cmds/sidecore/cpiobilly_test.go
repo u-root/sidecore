@@ -5,6 +5,10 @@
 package main
 
 import (
+	"errors"
+	"io"
+	"io/fs"
+	"os"
 	"testing"
 )
 
@@ -41,4 +45,58 @@ func TestBillyFS(t *testing.T) {
 	if ents[0].Name() != "." {
 		t.Fatalf(`Readdir("a"): ents[0] name is %q, not '.'`, ents[0].Name())
 	}
+
+	fi, err = f.Stat("a/b/hosts")
+	if err != nil {
+		t.Fatalf(`Stat("a/b/hosts"): %v != nil `, err)
+	}
+	m := fi.Mode()
+	if m.Type() != fs.ModeSymlink {
+		t.Fatalf(`Stat("a/b/hosts").Mode(): %v != %v `, m.Type(), fs.ModeSymlink)
+	}
+	h1, err := f.Open("a/b/hosts")
+	if err != nil {
+		t.Fatalf(`Open("a/b/hosts"): %v != nil`, m.Type())
+	}
+	var b [512]byte
+	if _, err := h1.ReadAt(b[:], 0); err == nil {
+		t.Fatalf(`ReadAll("a/b/hosts"): nil != an error`)
+	}
+	if err := h1.Close(); err != nil {
+		t.Fatalf(`Close("a/b/hosts"): %v != nil`, err)
+	}
+
+	l, err := f.Readlink("a/b/hosts")
+	if err != nil {
+		t.Fatalf(`Readlink("a/b/hosts"): %v != nil `, err)
+	}
+	if l != "c/d/hosts" {
+		t.Fatalf(`Readlink("a/b/hosts"): %s != "c/d/hosts"`, l)
+	}
+
+	h1, err = f.Open("a/b/c/d/hosts")
+	if err != nil {
+		t.Fatalf(`Open("a/b/c/d/hosts"): %v != nil`, m.Type())
+	}
+	n, err := h1.ReadAt(b[:], 0)
+	// ReadAt is allowed to return io.EOF OR nil when
+	// n is < len(b)
+	//     When ReadAt returns n < len(p), it returns a non-nil error explaining why
+	//     more bytes were not returned. In this respect, ReadAt is stricter than Read.
+
+	if err != nil && !errors.Is(err, io.EOF) {
+		t.Fatalf(`ReadAll("a/b/c/d/hosts"): %v != nil`, err)
+	}
+	if err := h1.Close(); err != nil {
+		t.Fatalf(`Close("a/b/c/d/hosts"): %v != nil`, err)
+	}
+
+	hosts, err := os.ReadFile("data/a/b/c/d/hosts")
+	if err != nil {
+		t.Fatalf(`reading "data/a/b/c/d/hosts": %v != nil`, err)
+	}
+	if string(hosts) != string(b[:n]) {
+		t.Fatalf(`reading "data/a/b/c/d/hosts": %q != %q`, string(b[:n]), string(hosts))
+	}
+
 }
