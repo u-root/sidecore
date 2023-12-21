@@ -30,8 +30,8 @@ func TestBillyFS(t *testing.T) {
 	if err != nil {
 		t.Fatalf(`Readdir("."): %v != nil `, err)
 	}
-	if len(ents) != 3 {
-		t.Fatalf(`Readdir("."): %d entries != 3 `, len(ents))
+	if len(ents) != 2 {
+		t.Fatalf(`Readdir("."): %d entries != 2 `, len(ents))
 	}
 
 	h1, err := f.Open(".")
@@ -47,12 +47,12 @@ func TestBillyFS(t *testing.T) {
 	if err != nil {
 		t.Fatalf(`Readdir("a"): %v != nil `, err)
 	}
-	if len(ents) != 2 {
-		t.Fatalf(`Readdir("a"): %d entries != 2 `, len(ents))
+	if len(ents) != 1 {
+		t.Fatalf(`Readdir("a"): %d entries != 1 `, len(ents))
 	}
 	t.Logf("/a readdir, entries %v", ents)
-	if ents[0].Name() != "." {
-		t.Fatalf(`Readdir("a"): ents[0] name is %q, not '.'`, ents[0].Name())
+	if ents[0].Name() != "b" {
+		t.Fatalf(`Readdir("a"): ents[0] name is %q, not 'b'`, ents[0].Name())
 	}
 
 	fi, err = f.Stat("a/b/hosts")
