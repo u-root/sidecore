@@ -33,6 +33,15 @@ func TestBillyFS(t *testing.T) {
 	if len(ents) != 3 {
 		t.Fatalf(`Readdir("."): %d entries != 3 `, len(ents))
 	}
+
+	h1, err := f.Open(".")
+	if err != nil {
+		t.Fatalf(`Open("."): %v != nil`, err)
+	}
+	if err := h1.Close(); err != nil {
+		t.Fatalf(`Close("."): %v != nil`, err)
+	}
+
 	t.Logf("root readdir, entries %v", ents)
 	ents, err = f.ReadDir("a")
 	if err != nil {
@@ -54,7 +63,7 @@ func TestBillyFS(t *testing.T) {
 	if m.Type() != fs.ModeSymlink {
 		t.Fatalf(`Stat("a/b/hosts").Mode(): %v != %v `, m.Type(), fs.ModeSymlink)
 	}
-	h1, err := f.Open("a/b/hosts")
+	h1, err = f.Open("a/b/hosts")
 	if err != nil {
 		t.Fatalf(`Open("a/b/hosts"): %v != nil`, m.Type())
 	}
