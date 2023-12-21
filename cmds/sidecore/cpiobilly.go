@@ -351,8 +351,7 @@ func (l *file) readdir() ([]uint64, error) {
 // files will be in some sort of order ...
 func (l *file) ReadDir(offset uint64, count uint32) ([]fs.FileInfo, error) {
 	verbose("file readdir")
-	rec, err := l.rec()
-	if err != nil {
+	if _, err := l.rec(); err != nil {
 		return nil, err
 	}
 	list, err := l.readdir()
@@ -362,12 +361,9 @@ func (l *file) ReadDir(offset uint64, count uint32) ([]fs.FileInfo, error) {
 	if offset > uint64(len(list)) {
 		return nil, io.EOF
 	}
+	// NOTE: go-nfs takes care of . and .., so it is ok to skip it here.
 	verbose("cpio:readdir list %v", list)
-	dirents := make([]os.FileInfo, 0, len(list)+1)
-	dot := *rec
-	dot.Name = "."
-	dirents = append(dirents, &fstat{Record: &dot})
-	verbose("cpio:add path %d '.'", l.Path)
+	dirents := make([]os.FileInfo, 0, len(list))
 	//verbose("cpio:readdir %q returns %d entries start at offset %d", l.Path, len(fi), offset)
 	for _, i := range list[offset:] {
 		entry := file{Path: i + offset, fs: l.fs}
