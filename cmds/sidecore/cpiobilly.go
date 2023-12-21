@@ -154,7 +154,7 @@ func (f *fsCPIO) Mode() os.FileMode {
 }
 
 func (f *fsCPIO) ModTime() time.Time {
-	return time.Now()
+	return time.Unix(0,0)
 }
 
 func (f *fsCPIO) IsDir() bool {
@@ -209,7 +209,7 @@ func (f *fstat) Mode() os.FileMode {
 }
 
 func (f *fstat) ModTime() time.Time {
-	return time.Now()
+	return time.Unix(0,0)
 }
 
 func (f *fstat) IsDir() bool {
