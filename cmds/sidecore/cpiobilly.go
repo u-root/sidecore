@@ -18,14 +18,16 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
-	"net"
-
 	"github.com/go-git/go-billy/v5"
+	"github.com/u-root/cpu/client"
 	"github.com/u-root/u-root/pkg/cpio"
 	nfs "github.com/willscott/go-nfs"
 	nfshelper "github.com/willscott/go-nfs/helpers"
@@ -154,7 +156,7 @@ func (f *fsCPIO) Mode() os.FileMode {
 }
 
 func (f *fsCPIO) ModTime() time.Time {
-	return time.Unix(0,0)
+	return time.Unix(0, 0)
 }
 
 func (f *fsCPIO) IsDir() bool {
@@ -209,7 +211,7 @@ func (f *fstat) Mode() os.FileMode {
 }
 
 func (f *fstat) ModTime() time.Time {
-	return time.Unix(0,0)
+	return time.Unix(0, 0)
 }
 
 func (f *fstat) IsDir() bool {
@@ -411,20 +413,38 @@ func (ROFS) Capabilities() billy.Capability {
 	return billy.ReadCapability
 }
 
-func srv(n string) error {
-	listener, err := net.Listen("tcp", ":2049")
-	if err != nil {
-		return err
-	}
-	fmt.Printf("Server running at %s\n", listener.Addr())
-
+func srvNFS(cl *client.Cmd, n string) error {
 	mem, err := NewfsCPIO(n)
 	if err != nil {
 		return err
 	}
+	l, err := cl.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		// If ipv4 isn't available, try ipv6.  It's not enough
+		// to use Listen("tcp", "localhost:0a)", since we (the
+		// cpu client) might have v4 (which the runtime will
+		// use if we say "localhost"), but the server (cpud)
+		// might not.
+		l, err = cl.Listen("tcp", "[::1]:0")
+		if err != nil {
+			return fmt.Errorf("cpu client listen for forwarded nfs port %v", err)
+		}
+	}
+	log.Printf("ssh.listener %v", l.Addr().String())
+	ap := strings.Split(l.Addr().String(), ":")
+	if len(ap) == 0 {
+		return fmt.Errorf("Can't find a port number in %v", l.Addr().String())
+	}
+	portnfs, err := strconv.ParseUint(ap[len(ap)-1], 0, 16)
+	if err != nil {
+		return fmt.Errorf("Can't find a 16-bit port number in %v", l.Addr().String())
+	}
+	verbose("listener %T %v addr %v port %v", l, l, l.Addr().String(), portnfs)
 
 	handler := nfshelper.NewNullAuthHandler(ROFS{mem})
 	cacheHelper := nfshelper.NewCachingHandler(handler, 1024)
-	fmt.Printf("%v", nfs.Serve(listener, cacheHelper))
+	go func() {
+		fmt.Printf("%v", nfs.Serve(l, cacheHelper))
+	}()
 	return nil
 }
