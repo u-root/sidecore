@@ -29,6 +29,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/go-git/go-billy/v5"
 	"github.com/u-root/cpu/client"
 	"github.com/u-root/u-root/pkg/cpio"
@@ -444,7 +445,12 @@ func srvNFS(cl *client.Cmd, n string) error {
 	}
 	verbose("listener %T %v addr %v port %v", l, l, l.Addr().String(), portnfs)
 
-	handler := NewNullAuthHandler(l, ROFS{mem}, "youbetter")
+	u, err := uuid.NewRandom()
+	if err != nil {
+		return err
+	}
+	handler := NewNullAuthHandler(l, ROFS{mem}, u.String())
+	log.Printf("uuid is %q", u.String())
 	cacheHelper := nfshelper.NewCachingHandler(handler, 1024)
 	go func() {
 		fmt.Printf("%v", nfs.Serve(l, cacheHelper))
@@ -470,15 +476,22 @@ type NullAuthHandler struct {
 
 // Mount backs Mount RPC Requests, allowing for access control policies.
 func (h *NullAuthHandler) Mount(ctx context.Context, conn net.Conn, req nfs.MountRequest) (status nfs.MountStatus, hndl billy.Filesystem, auths []nfs.AuthFlavor) {
+	// "Give me a ping, Vasili. One ping only, please."
+	// Even if it fails, you only get one chance.
 	c := atomic.AddInt32(&h.count, 1)
 	if c > 1 {
 		status = nfs.MountStatusErrPerm
 		return
 	}
+	if string(req.Dirpath) != h.n {
+		status = nfs.MountStatusErrNoEnt
+		verbose("req.Dirpath %q != nonce %q", string(req.Dirpath), h.n)
+		return
+	}
+
 	status = nfs.MountStatusOk
 	hndl = h.fs
 	auths = []nfs.AuthFlavor{nfs.AuthFlavorNull}
-	// "Give me a ping, Vasili. One ping only, please."
 	return
 }
 
