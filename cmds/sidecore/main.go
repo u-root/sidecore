@@ -207,7 +207,7 @@ func getPort(host, port string) string {
 	return p
 }
 
-func newCPU(srv p9.Attacher, cpu *cpu, args ...string) (retErr error) {
+func newCPU(srv p9.Attacher, wg sync.WaitGroup, container string, cpu *cpu, args ...string) (retErr error) {
 	// note that 9P is enabled if namespace is not empty OR if ninep is true
 	c := client.Command(cpu.host, args...)
 	defer func() {
@@ -249,6 +249,16 @@ func newCPU(srv p9.Attacher, cpu *cpu, args ...string) (retErr error) {
 	defer signal.Stop(sigChan)
 	errChan := make(chan error, 1)
 	defer close(errChan)
+
+	if *srvnfs {
+		wg.Add(1)
+		var err error
+		go func() {
+			err = srvNFS(c, container)
+			log.Printf("nfs: %v", err)
+			wg.Done()
+		}()
+	}
 
 	go func() {
 		verbose("start")
@@ -397,15 +407,6 @@ func main() {
 	keyFile := os.Getenv("SIDECORE_KEYFILE")
 	hostKeyFile := os.Getenv("SIDECORE_HOSTKEYFILE")
 
-	if *srvnfs {
-		wg.Add(1)
-		var err error
-		go func() {
-			err = srv(container)
-			log.Printf("nfs: %v", err)
-			wg.Done()
-		}()
-	}
 	for _, cpu := range cpus {
 		var err error
 		wg.Add(1)
@@ -420,7 +421,7 @@ func main() {
 		cpu.fstab = fstab
 
 		verbose("cpu to %v:%v", cpu.host, cpu.port)
-		if err := newCPU(u, &cpu, args...); err != nil {
+		if err := newCPU(u, wg, container, &cpu, args...); err != nil {
 			e := 1
 			log.Printf("SSH error %s", err)
 			sshErr := &ossh.ExitError{}
