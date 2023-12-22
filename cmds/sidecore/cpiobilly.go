@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-git/go-billy/v5"
@@ -443,7 +444,7 @@ func srvNFS(cl *client.Cmd, n string) error {
 	}
 	verbose("listener %T %v addr %v port %v", l, l, l.Addr().String(), portnfs)
 
-	handler := NewNullAuthHandler(ROFS{mem})
+	handler := NewNullAuthHandler(l, ROFS{mem}, "youbetter")
 	cacheHelper := nfshelper.NewCachingHandler(handler, 1024)
 	go func() {
 		fmt.Printf("%v", nfs.Serve(l, cacheHelper))
@@ -454,20 +455,30 @@ func srvNFS(cl *client.Cmd, n string) error {
 // auth handler for our special sauce.
 
 // NewNullAuthHandler creates a handler for the provided filesystem
-func NewNullAuthHandler(fs billy.Filesystem) nfs.Handler {
-	return &NullAuthHandler{fs}
+// todo: youbetter becomes a nonce
+func NewNullAuthHandler(l net.Listener, fs billy.Filesystem, nonce string) nfs.Handler {
+	return &NullAuthHandler{l: l, fs: fs, n: nonce}
 }
 
 // NullAuthHandler returns a NFS backing that exposes a given file system in response to all mount requests.
 type NullAuthHandler struct {
-	fs billy.Filesystem
+	l     net.Listener
+	count int32
+	fs    billy.Filesystem
+	n     string
 }
 
 // Mount backs Mount RPC Requests, allowing for access control policies.
 func (h *NullAuthHandler) Mount(ctx context.Context, conn net.Conn, req nfs.MountRequest) (status nfs.MountStatus, hndl billy.Filesystem, auths []nfs.AuthFlavor) {
+	c := atomic.AddInt32(&h.count, 1)
+	if c > 1 {
+		status = nfs.MountStatusErrPerm
+		return
+	}
 	status = nfs.MountStatusOk
 	hndl = h.fs
 	auths = []nfs.AuthFlavor{nfs.AuthFlavorNull}
+	// "Give me a ping, Vasili. One ping only, please."
 	return
 }
 
