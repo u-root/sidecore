@@ -4,6 +4,7 @@ go 1.20
 
 require (
 	github.com/go-git/go-billy/v5 v5.5.0
+	github.com/google/uuid v1.4.0
 	github.com/hugelgupf/p9 v0.2.1-0.20230803231326-7b9704081cf5
 	github.com/kevinburke/ssh_config v1.2.0
 	github.com/u-root/cpu v0.0.0-20230807161724-f2081b5707bd
@@ -17,7 +18,6 @@ require (
 	github.com/brutella/dnssd v1.2.9 // indirect
 	github.com/dustin/go-humanize v1.0.0 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
-	github.com/google/uuid v1.4.0 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/mdlayher/socket v0.4.1 // indirect
 	github.com/mdlayher/vsock v1.2.1 // indirect
