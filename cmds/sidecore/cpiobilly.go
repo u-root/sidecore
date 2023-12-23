@@ -29,8 +29,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/go-git/go-billy/v5"
+	"github.com/google/uuid"
 	"github.com/u-root/cpu/client"
 	"github.com/u-root/u-root/pkg/cpio"
 	nfs "github.com/willscott/go-nfs"
@@ -417,10 +417,10 @@ func (ROFS) Capabilities() billy.Capability {
 	return billy.ReadCapability
 }
 
-func srvNFS(cl *client.Cmd, n string) error {
+func srvNFS(cl *client.Cmd, n string) (func() error, string, error) {
 	mem, err := NewfsCPIO(n)
 	if err != nil {
-		return err
+		return nil, "", err
 	}
 	l, err := cl.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -431,31 +431,32 @@ func srvNFS(cl *client.Cmd, n string) error {
 		// might not.
 		l, err = cl.Listen("tcp", "[::1]:0")
 		if err != nil {
-			return fmt.Errorf("cpu client listen for forwarded nfs port %v", err)
+			return nil, "", fmt.Errorf("cpu client listen for forwarded nfs port %v", err)
 		}
 	}
 	log.Printf("ssh.listener %v", l.Addr().String())
 	ap := strings.Split(l.Addr().String(), ":")
 	if len(ap) == 0 {
-		return fmt.Errorf("Can't find a port number in %v", l.Addr().String())
+		return nil, "", fmt.Errorf("Can't find a port number in %v", l.Addr().String())
 	}
 	portnfs, err := strconv.ParseUint(ap[len(ap)-1], 0, 16)
 	if err != nil {
-		return fmt.Errorf("Can't find a 16-bit port number in %v", l.Addr().String())
+		return nil, "", fmt.Errorf("Can't find a 16-bit port number in %v", l.Addr().String())
 	}
 	verbose("listener %T %v addr %v port %v", l, l, l.Addr().String(), portnfs)
 
 	u, err := uuid.NewRandom()
 	if err != nil {
-		return err
+		return nil, "", err
 	}
 	handler := NewNullAuthHandler(l, ROFS{mem}, u.String())
 	log.Printf("uuid is %q", u.String())
 	cacheHelper := nfshelper.NewCachingHandler(handler, 1024)
-	go func() {
-		fmt.Printf("%v", nfs.Serve(l, cacheHelper))
-	}()
-	return nil
+	f := func() error {
+		return nfs.Serve(l, cacheHelper)
+	}
+	fstab := fmt.Sprintf("127.0.0.1:%s /tmp/cpu nfs ro,relatime,vers=3,rsize=1048576,wsize=1048576,namlen=255,hard,nolock,proto=tcp,port=%d,timeo=600,retrans=2,sec=sys,mountaddr=127.0.0.1,mountvers=3,mountport=%d,mountproto=tcp,local_lock=all,addr=127.0.0.1 0 0\n", u, portnfs, portnfs)
+	return f, fstab, nil
 }
 
 // auth handler for our special sauce.
