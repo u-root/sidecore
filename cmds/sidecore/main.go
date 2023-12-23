@@ -251,13 +251,33 @@ func newCPU(srv p9.Attacher, wg sync.WaitGroup, container string, cpu *cpu, args
 	defer close(errChan)
 
 	if *srvnfs {
+		f, fstab, err := srvNFS(c, container)
+		if err != nil {
+			return err
+		}
 		wg.Add(1)
-		var err error
 		go func() {
-			err = srvNFS(c, container)
+			err := f()
 			log.Printf("nfs: %v", err)
 			wg.Done()
 		}()
+		var oldenv string
+		for _, r := range c.Env {
+			log.Printf("Check %q", r)
+			if !strings.HasPrefix(r, "CPU_FSTAB=") {
+				continue
+			}
+			s := strings.SplitN(r, "=", 2)
+			log.Printf("SP %q", s)
+			if len(s) == 2 {
+				oldenv = s[1]
+			}
+			break
+		}
+		log.Printf("olenv %q", oldenv)
+
+		c.Env = append(c.Env, "CPU_FSTAB="+fstab+oldenv)
+		log.Printf("c.FSTab %q c.Env %q", c.FSTab, c.Env)
 	}
 
 	go func() {
