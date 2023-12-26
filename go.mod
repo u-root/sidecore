@@ -4,12 +4,12 @@ go 1.20
 
 require (
 	github.com/go-git/go-billy/v5 v5.5.0
-	github.com/google/uuid v1.4.0
+	github.com/google/uuid v1.5.0
 	github.com/hugelgupf/p9 v0.2.1-0.20230814004337-e6037077d6dc
 	github.com/kevinburke/ssh_config v1.2.0
 	github.com/u-root/cpu v0.0.0-20231225082904-4284bb8377cf
 	github.com/u-root/u-root v0.11.1-0.20230913033713-004977728a9d
-	github.com/willscott/go-nfs v0.0.1
+	github.com/willscott/go-nfs v0.0.2-0.20231226124434-269dbac4154c
 	golang.org/x/crypto v0.17.0
 	golang.org/x/sys v0.15.0
 )
