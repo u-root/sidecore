@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -95,10 +96,41 @@ func (*ok) Close() error { return nil }
 // fsCPIO implements fs.Stat
 type fsCPIO struct {
 	no
-	file *os.File
-	rr   cpio.RecordReader
-	m    map[string]uint64
-	recs []cpio.Record
+	file    *os.File
+	rr      cpio.RecordReader
+	m       map[string]uint64
+	recs    []cpio.Record
+	mnts    []MountPoint
+	mntLock sync.RWMutex
+}
+
+type MountPoint struct {
+	n string
+	f *fsCPIO
+}
+
+func (f *fsCPIO) hasMount(n string) (int, error) {
+	f.mntLock.RLock()
+	defer f.mntLock.RUnlock()
+	for i, v := range f.mnts {
+		if strings.HasPrefix(n, v.n) {
+			return i, nil
+		}
+	}
+	return -1, fmt.Errorf("%s:%w", n, os.ErrNotExist)
+}
+
+// Mount adds a mountpoint to an fsCPIO
+func (f *fsCPIO) Mount(m MountPoint) error {
+	f.mntLock.Lock()
+	defer f.mntLock.Unlock()
+	for _, v := range f.mnts {
+		if strings.HasPrefix(m.n, v.n) {
+			return fmt.Errorf("%q:%w", m.n, os.ErrExist)
+		}
+	}
+	f.mnts = append(f.mnts, m)
+	return nil
 }
 
 // ReadDir implements readdir for fsCPIO.
