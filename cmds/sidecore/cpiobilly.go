@@ -26,7 +26,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -101,31 +100,28 @@ type fsCPIO struct {
 	m       map[string]uint64
 	recs    []cpio.Record
 	mnts    []MountPoint
-	mntLock sync.RWMutex
 }
 
 type MountPoint struct {
-	n string
-	f *fsCPIO
+	n  string
+	fs billy.Filesystem
 }
 
-func (f *fsCPIO) hasMount(n string) (int, error) {
-	f.mntLock.RLock()
-	defer f.mntLock.RUnlock()
+func (f *fsCPIO) hasMount(n string) (*MountPoint, error) {
 	for i, v := range f.mnts {
 		if strings.HasPrefix(n, v.n) {
-			return i, nil
+			return &f.mnts[i], nil
 		}
 	}
-	return -1, fmt.Errorf("%s:%w", n, os.ErrNotExist)
+	return nil, fmt.Errorf("%s:%w", n, os.ErrNotExist)
 }
 
-// Mount adds a mountpoint to an fsCPIO
-func (f *fsCPIO) Mount(m MountPoint) error {
-	f.mntLock.Lock()
-	defer f.mntLock.Unlock()
-	for _, v := range f.mnts {
-		if strings.HasPrefix(m.n, v.n) {
+// mount adds a mountpoint to an fsCPIO.
+// It is only intended to be called from New, and only checks
+// for obvious errors such as duplicate entries.
+func (f *fsCPIO) mount(m MountPoint) error {
+	for _, m := range f.mnts {
+		if _, err := f.hasMount(m.n); err == nil {
 			return fmt.Errorf("%q:%w", m.n, os.ErrExist)
 		}
 	}
@@ -133,15 +129,25 @@ func (f *fsCPIO) Mount(m MountPoint) error {
 	return nil
 }
 
+// Chroot
+func (*fsCPIO) Chroot(_ string) (billy.Filesystem, error) {
+	return nil, os.ErrPermission
+}
+
+// Create
+func (*fsCPIO) Create(_ string) (billy.File, error) {
+	return nil, os.ErrPermission
+}
+
 // ReadDir implements readdir for fsCPIO.
 // If path is empty, ino 0 (root) is assumed.
-func (f *fsCPIO) ReadDir(path string) ([]os.FileInfo, error) {
-	ino, ok := f.m[path]
+func (fs *fsCPIO) ReadDir(path string) ([]os.FileInfo, error) {
+	ino, ok := fs.m[path]
 	verbose("fseraddr %q ino %d %v", path, ino, ok)
 	if !ok {
 		ino = 0
 	}
-	l := file{Path: ino, fs: f}
+	l := file{Path: ino, fs: fs}
 	fi, err := l.ReadDir(0, 1048576) // no idea what to do for size.
 	verbose("%v, %v", fi, err)
 	return fi, err
@@ -259,8 +265,12 @@ func (f *fstat) Sys() any {
 	return nil
 }
 
+func WithMount(n string, fs billy.Filesystem) MountPoint{
+	return MountPoint{n:n, fs:fs}
+}
+
 // NewfsCPIO returns a fsCPIO, properly initialized.
-func NewfsCPIO(c string) (*fsCPIO, error) {
+func NewfsCPIO(c string, mounts ...MountPoint) (*fsCPIO, error) {
 	f, err := os.Open(c)
 	if err != nil {
 		return nil, err
@@ -291,7 +301,13 @@ func NewfsCPIO(c string) (*fsCPIO, error) {
 		m[r.Info.Name] = uint64(i)
 	}
 
-	return &fsCPIO{file: f, rr: rr, recs: recs, m: m}, nil
+	fs := &fsCPIO{file: f, rr: rr, recs: recs, m: m}
+	for _, m := range mounts {
+		if err := fs.mount(m); err != nil {
+			return nil, err
+		}
+	}
+	return fs, nil
 }
 
 func (fs *fsCPIO) Stat(filename string) (os.FileInfo, error) {
@@ -315,22 +331,29 @@ func (l *file) rec() (*cpio.Record, error) {
 	return &l.fs.recs[l.Path], nil
 }
 
-func (f *fsCPIO) lookup(filename string) (*cpio.Record, error) {
-	ino, ok := f.m[filename]
-	verbose("fseraddr %q ino %d %v", filename, ino, ok)
-	if !ok {
-		ino = 0
+func (fs *fsCPIO) getfs(filename string) (billy.Filesystem, error) {
+	if l, err := fs.hasMount(filename); err == nil {
+		return l.fs, nil
 	}
-	l := &file{Path: ino, fs: f}
-	return l.rec()
+	return fs, nil
+}
+
+func (fs*fsCPIO) lookup(filename string) (billy.File, error) {
+	var ino uint64
+	if len(filename) > 0 {
+		var ok bool
+		ino, ok = fs.m[filename]
+		verbose("lookup %q ino %d %v", filename, ino, ok)
+		if !ok {
+			return nil, os.ErrNotExist
+		}
+	}
+	l := &file{Path: ino, fs: fs}
+	return l, nil
 }
 
 func (fs *fsCPIO) Open(filename string) (billy.File, error) {
-	ino, ok := fs.m[filename]
-	if !ok {
-		return nil, os.ErrNotExist
-	}
-	return &file{fs: fs, Path: ino}, nil
+	return fs.lookup(filename)
 }
 
 func (*no) OpenFile(filename string, flag int, perm os.FileMode) (billy.File, error) {
