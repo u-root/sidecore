@@ -197,4 +197,17 @@ func TestBillyFSMount(t *testing.T) {
 		t.Fatalf(`Readlink("home/glenda/h"): %s != "hosts"`, l)
 	}
 
+	ents, err := f.ReadDir("home")
+	if err != nil {
+		t.Fatalf(`Readdir("home"): %v != nil `, err)
+	}
+	osents, err := os.ReadDir("home")
+	if err != nil {
+		t.Fatalf(`os.Readdir("home"): %v != nil `, err)
+	}
+	t.Logf("Readdir home: %q, %v", ents, err)
+	if len(ents) != len(osents) {
+		t.Fatalf(`Readdir("home"): %d entries != %d`, len(ents), len(osents))
+	}
+
 }
