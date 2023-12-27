@@ -105,8 +105,8 @@ type fsCPIO struct {
 }
 
 type MountPoint struct {
-	n string
-	f *fsCPIO
+	n  string
+	fs billy.Filesystem
 }
 
 func (f *fsCPIO) hasMount(n string) (int, error) {
@@ -121,16 +121,26 @@ func (f *fsCPIO) hasMount(n string) (int, error) {
 }
 
 // Mount adds a mountpoint to an fsCPIO
-func (f *fsCPIO) Mount(m MountPoint) error {
+func (f *fsCPIO) Mount(name string, fs billy.Filesystem) error {
 	f.mntLock.Lock()
 	defer f.mntLock.Unlock()
-	for _, v := range f.mnts {
-		if strings.HasPrefix(m.n, v.n) {
+	for _, m := range f.mnts {
+		if strings.HasPrefix(name, m.n) {
 			return fmt.Errorf("%q:%w", m.n, os.ErrExist)
 		}
 	}
-	f.mnts = append(f.mnts, m)
+	f.mnts = append(f.mnts, MountPoint{n: name, fs: fs})
 	return nil
+}
+
+// Chroot
+func (*fsCPIO) Chroot(_ string) (billy.Filesystem, error) {
+	return nil, os.ErrPermission
+}
+
+// Create
+func (*fsCPIO) Create(_ string) (billy.File, error) {
+	return nil, os.ErrPermission
 }
 
 // ReadDir implements readdir for fsCPIO.
