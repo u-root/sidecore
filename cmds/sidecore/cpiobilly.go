@@ -26,7 +26,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -101,7 +100,6 @@ type fsCPIO struct {
 	m       map[string]uint64
 	recs    []cpio.Record
 	mnts    []MountPoint
-	mntLock sync.RWMutex
 }
 
 type MountPoint struct {
@@ -110,8 +108,6 @@ type MountPoint struct {
 }
 
 func (f *fsCPIO) hasMount(n string) (int, error) {
-	f.mntLock.RLock()
-	defer f.mntLock.RUnlock()
 	for i, v := range f.mnts {
 		if strings.HasPrefix(n, v.n) {
 			return i, nil
@@ -120,16 +116,16 @@ func (f *fsCPIO) hasMount(n string) (int, error) {
 	return -1, fmt.Errorf("%s:%w", n, os.ErrNotExist)
 }
 
-// Mount adds a mountpoint to an fsCPIO
-func (f *fsCPIO) Mount(name string, fs billy.Filesystem) error {
-	f.mntLock.Lock()
-	defer f.mntLock.Unlock()
+// mount adds a mountpoint to an fsCPIO.
+// It is only intended to be called from New, and only checks
+// for obvious errors such as duplicate entries.
+func (f *fsCPIO) mount(m MountPoint) error {
 	for _, m := range f.mnts {
-		if strings.HasPrefix(name, m.n) {
+		if _, err := f.hasMount(m.n); err == nil {
 			return fmt.Errorf("%q:%w", m.n, os.ErrExist)
 		}
 	}
-	f.mnts = append(f.mnts, MountPoint{n: name, fs: fs})
+	f.mnts = append(f.mnts, m)
 	return nil
 }
 
@@ -269,8 +265,12 @@ func (f *fstat) Sys() any {
 	return nil
 }
 
+func WithMount(n string, fs billy.Filesystem) MountPoint{
+	return MountPoint{n:n, fs:fs}
+}
+
 // NewfsCPIO returns a fsCPIO, properly initialized.
-func NewfsCPIO(c string) (*fsCPIO, error) {
+func NewfsCPIO(c string, mounts ...MountPoint) (*fsCPIO, error) {
 	f, err := os.Open(c)
 	if err != nil {
 		return nil, err
@@ -301,7 +301,13 @@ func NewfsCPIO(c string) (*fsCPIO, error) {
 		m[r.Info.Name] = uint64(i)
 	}
 
-	return &fsCPIO{file: f, rr: rr, recs: recs, m: m}, nil
+	fs := &fsCPIO{file: f, rr: rr, recs: recs, m: m}
+	for _, m := range mounts {
+		if err := fs.mount(m); err != nil {
+			return nil, err
+		}
+	}
+	return fs, nil
 }
 
 func (fs *fsCPIO) Stat(filename string) (os.FileInfo, error) {
