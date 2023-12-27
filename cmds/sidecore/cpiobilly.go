@@ -341,7 +341,8 @@ func (fs *fsCPIO) getfs(filename string) (billy.Filesystem, error) {
 func (fs*fsCPIO) lookup(filename string) (billy.File, error) {
 	var ino uint64
 	if len(filename) > 0 {
-		ino, ok := fs.m[filename]
+		var ok bool
+		ino, ok = fs.m[filename]
 		verbose("lookup %q ino %d %v", filename, ino, ok)
 		if !ok {
 			return nil, os.ErrNotExist
@@ -352,11 +353,7 @@ func (fs*fsCPIO) lookup(filename string) (billy.File, error) {
 }
 
 func (fs *fsCPIO) Open(filename string) (billy.File, error) {
-	ino, ok := fs.m[filename]
-	if !ok {
-		return nil, os.ErrNotExist
-	}
-	return &file{fs: fs, Path: ino}, nil
+	return fs.lookup(filename)
 }
 
 func (*no) OpenFile(filename string, flag int, perm os.FileMode) (billy.File, error) {
