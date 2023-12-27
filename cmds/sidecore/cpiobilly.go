@@ -144,14 +144,15 @@ func (*fsCPIO) Create(_ string) (billy.File, error) {
 
 // ReadDir implements readdir for fsCPIO.
 // If path is empty, ino 0 (root) is assumed.
-func (fs *fsCPIO) ReadDir(path string) ([]os.FileInfo, error) {
-	ino, ok := fs.m[path]
-	verbose("fseraddr %q ino %d %v", path, ino, ok)
-	if !ok {
-		ino = 0
+func (fs *fsCPIO) ReadDir(filename string) ([]os.FileInfo, error) {
+	if osfs, rel, err := fs.getfs(filename); err == nil {
+		return osfs.ReadDir(rel)
 	}
-	l := file{Path: ino, fs: fs}
-	fi, err := l.ReadDir(0, 1048576) // no idea what to do for size.
+	l, err := fs.lookup(filename)
+	if err != nil {
+		return nil, err
+	}
+	fi, err := l.(*file).ReadDir(0, 1048576) // no idea what to do for size.
 	verbose("%v, %v", fi, err)
 	return fi, err
 }
@@ -458,7 +459,6 @@ func (l *file) ReadDir(offset uint64, count uint32) ([]fs.FileInfo, error) {
 
 // Readlink implements p9.File.Readlink.
 func (l *file) Readlink() (string, error) {
-	v("cpio:readlinkat:%v", l)
 	r, err := l.rec()
 	if err != nil {
 		return "", err
