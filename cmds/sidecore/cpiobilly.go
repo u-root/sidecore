@@ -215,12 +215,14 @@ func (f *fsCPIO) Sys() any {
 }
 
 func (fs *fsCPIO) Readlink(link string) (string, error) {
-	ino, ok := fs.m[link]
-	if !ok {
-		return "", os.ErrNotExist
+	if osfs, rel, err := fs.getfs(link); err == nil {
+		return osfs.Readlink(rel)
 	}
-	f := &file{fs: fs, Path: ino}
-	return f.Readlink()
+	l, err := fs.lookup(link)
+	if err != nil {
+		return "", err
+	}
+	return l.(*file).Readlink()
 }
 
 var _ billy.Filesystem = &fsCPIO{}
