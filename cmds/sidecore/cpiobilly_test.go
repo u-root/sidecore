@@ -189,4 +189,12 @@ func TestBillyFSMount(t *testing.T) {
 		t.Fatalf(`reading "home/glenda/hosts": %q != %q`, string(b[:n]), string(hosts))
 	}
 
+	l, err = f.Readlink("home/glenda/h")
+	if err != nil {
+		t.Fatalf(`Readlink("home/glenda/h"): %v != nil `, err)
+	}
+	if l != "hosts" {
+		t.Fatalf(`Readlink("home/glenda/h"): %s != "hosts"`, l)
+	}
+
 }
