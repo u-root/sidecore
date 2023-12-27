@@ -16,6 +16,7 @@ require (
 
 require (
 	github.com/brutella/dnssd v1.2.9 // indirect
+	github.com/cyphar/filepath-securejoin v0.2.4 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
