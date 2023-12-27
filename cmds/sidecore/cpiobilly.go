@@ -141,13 +141,13 @@ func (*fsCPIO) Create(_ string) (billy.File, error) {
 
 // ReadDir implements readdir for fsCPIO.
 // If path is empty, ino 0 (root) is assumed.
-func (f *fsCPIO) ReadDir(path string) ([]os.FileInfo, error) {
-	ino, ok := f.m[path]
+func (fs *fsCPIO) ReadDir(path string) ([]os.FileInfo, error) {
+	ino, ok := fs.m[path]
 	verbose("fseraddr %q ino %d %v", path, ino, ok)
 	if !ok {
 		ino = 0
 	}
-	l := file{Path: ino, fs: f}
+	l := file{Path: ino, fs: fs}
 	fi, err := l.ReadDir(0, 1048576) // no idea what to do for size.
 	verbose("%v, %v", fi, err)
 	return fi, err
@@ -331,7 +331,7 @@ func (l *file) rec() (*cpio.Record, error) {
 	return &l.fs.recs[l.Path], nil
 }
 
-func (fs *fsCPIO) fs(filename string) (billy.Filesystem, error) {
+func (fs *fsCPIO) getfs(filename string) (billy.Filesystem, error) {
 	if l, err := fs.hasMount(filename); err == nil {
 		return l.fs, nil
 	}
