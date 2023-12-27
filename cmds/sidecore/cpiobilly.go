@@ -107,13 +107,13 @@ type MountPoint struct {
 	fs billy.Filesystem
 }
 
-func (f *fsCPIO) hasMount(n string) (int, error) {
+func (f *fsCPIO) hasMount(n string) (*MountPoint, error) {
 	for i, v := range f.mnts {
 		if strings.HasPrefix(n, v.n) {
-			return i, nil
+			return &f.mnts[i], nil
 		}
 	}
-	return -1, fmt.Errorf("%s:%w", n, os.ErrNotExist)
+	return nil, fmt.Errorf("%s:%w", n, os.ErrNotExist)
 }
 
 // mount adds a mountpoint to an fsCPIO.
@@ -331,14 +331,24 @@ func (l *file) rec() (*cpio.Record, error) {
 	return &l.fs.recs[l.Path], nil
 }
 
-func (f *fsCPIO) lookup(filename string) (*cpio.Record, error) {
-	ino, ok := f.m[filename]
-	verbose("fseraddr %q ino %d %v", filename, ino, ok)
-	if !ok {
-		ino = 0
+func (fs *fsCPIO) fs(filename string) (billy.Filesystem, error) {
+	if l, err := fs.hasMount(filename); err == nil {
+		return l.fs, nil
 	}
-	l := &file{Path: ino, fs: f}
-	return l.rec()
+	return fs, nil
+}
+
+func (fs*fsCPIO) lookup(filename string) (billy.File, error) {
+	var ino uint64
+	if len(filename) > 0 {
+		ino, ok := fs.m[filename]
+		verbose("lookup %q ino %d %v", filename, ino, ok)
+		if !ok {
+			return nil, os.ErrNotExist
+		}
+	}
+	l := &file{Path: ino, fs: fs}
+	return l, nil
 }
 
 func (fs *fsCPIO) Open(filename string) (billy.File, error) {
