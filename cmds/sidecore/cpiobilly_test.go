@@ -210,4 +210,16 @@ func TestBillyFSMount(t *testing.T) {
 		t.Fatalf(`Readdir("home"): %d entries != %d`, len(ents), len(osents))
 	}
 
+	fi, err = f.Stat("home/glenda/h")
+	if err != nil {
+		t.Fatalf(`Stat("home/glenda/h"): %v != nil `, err)
+	}
+	fi, err = f.Lstat("home/glenda/h")
+	if err != nil {
+		t.Fatalf(`Stat("home/glenda/h"): %v != nil `, err)
+	}
+	m = fi.Mode()
+	if m.Type() != fs.ModeSymlink {
+		t.Fatalf(`Stat("home/glenda/h").Mode(): %v != %v `, m.Type(), fs.ModeSymlink)
+	}
 }

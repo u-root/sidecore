@@ -317,16 +317,18 @@ func NewfsCPIO(c string, mounts ...MountPoint) (*fsCPIO, error) {
 }
 
 func (fs *fsCPIO) Stat(filename string) (os.FileInfo, error) {
-	verbose("fsCPIO stat %q", filename)
-	if len(filename) == 0 {
-		return &fstat{Record: &fs.recs[0]}, nil
+	verbose("fs: Stat %q", filename)
+	if osfs, rel, err := fs.getfs(filename); err == nil {
+		verbose("osfs stat %q", rel)
+		m, err := osfs.Stat(rel)
+		verbose("m %v err %v", m, err)
+		return m, err
 	}
-	ino, ok := fs.m[filename]
-	verbose("fseraddr %q ino %d %v", filename, ino, ok)
-	if !ok {
-		return nil, os.ErrNotExist
+	l, err := fs.lookup(filename)
+	if err != nil {
+		return nil, err
 	}
-	return &fstat{Record: &fs.recs[ino]}, nil
+	return &fstat{Record: &fs.recs[l.(*file).Path]}, nil
 }
 
 func (l *file) rec() (*cpio.Record, error) {
