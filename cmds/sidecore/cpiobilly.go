@@ -27,6 +27,7 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/go-git/go-billy/v5"
@@ -324,6 +325,41 @@ func (fs *fsCPIO) Stat(filename string) (os.FileInfo, error) {
 		verbose("m %v err %v", m, err)
 		return m, err
 	}
+	// Fun. For as long as readlink works,
+	// and we've done less than (whatevs) 20 readlinks,
+	// keep doing it. Then return what is left.
+	var linkcount int
+	for {
+		if linkcount > 20 {
+			return nil, syscall.ELOOP
+		}
+
+		s, err := fs.Readlink(filename)
+		if err != nil {
+			break
+		}
+		linkcount++
+		if !path.IsAbs(s) {
+			s = filepath.Join(filepath.Dir(filename), s)
+		}
+		filename = s
+	}
+	l, err := fs.lookup(filename)
+	if err != nil {
+		return nil, err
+	}
+	fi := &fstat{Record: &fs.recs[l.(*file).Path]}
+	return fi, nil
+}
+
+func (fs *fsCPIO) Lstat(filename string) (os.FileInfo, error) {
+	verbose("fs: Stat %q", filename)
+	if osfs, rel, err := fs.getfs(filename); err == nil {
+		verbose("osfs stat %q", rel)
+		m, err := osfs.Lstat(rel)
+		verbose("m %v err %v", m, err)
+		return m, err
+	}
 	l, err := fs.lookup(filename)
 	if err != nil {
 		return nil, err
@@ -466,6 +502,9 @@ func (l *file) Readlink() (string, error) {
 	r, err := l.rec()
 	if err != nil {
 		return "", err
+	}
+	if (&fstat{Record: r}).Mode().Type() != fs.ModeSymlink {
+		return "", os.ErrInvalid
 	}
 	link := make([]byte, r.FileSize, r.FileSize)
 	v("cpio:readlink: %d byte link", len(link))

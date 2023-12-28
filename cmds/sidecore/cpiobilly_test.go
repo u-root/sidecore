@@ -55,7 +55,7 @@ func TestBillyFS(t *testing.T) {
 		t.Fatalf(`Readdir("a"): ents[0] name is %q, not 'b'`, ents[0].Name())
 	}
 
-	fi, err = f.Stat("a/b/hosts")
+	fi, err = f.Lstat("a/b/hosts")
 	if err != nil {
 		t.Fatalf(`Stat("a/b/hosts"): %v != nil `, err)
 	}
@@ -118,13 +118,21 @@ func TestBillyFSMount(t *testing.T) {
 	}
 
 	// Make sure the underlying layers are there.
-	fi, err := f.Stat("a/b/hosts")
+	fi, err := f.Lstat("a/b/hosts")
 	if err != nil {
 		t.Fatalf(`Stat("a/b/hosts"): %v != nil `, err)
 	}
 	m := fi.Mode()
 	if m.Type() != fs.ModeSymlink {
 		t.Fatalf(`Stat("a/b/hosts").Mode(): %v != %v `, m.Type(), fs.ModeSymlink)
+	}
+	fi, err = f.Stat("a/b/hosts")
+	if err != nil {
+		t.Fatalf(`Stat("a/b/hosts"): %v != nil `, err)
+	}
+	m = fi.Mode()
+	if !m.IsRegular() {
+		t.Fatalf(`Stat("a/b/hosts").Mode(): %v != true `, m.IsRegular())
 	}
 	h1, err := f.Open("a/b/hosts")
 	if err != nil {
