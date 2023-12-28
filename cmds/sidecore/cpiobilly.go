@@ -331,6 +331,21 @@ func (fs *fsCPIO) Stat(filename string) (os.FileInfo, error) {
 	return &fstat{Record: &fs.recs[l.(*file).Path]}, nil
 }
 
+func (fs *fsCPIO) Lstat(filename string) (os.FileInfo, error) {
+	verbose("fs: Stat %q", filename)
+	if osfs, rel, err := fs.getfs(filename); err == nil {
+		verbose("osfs stat %q", rel)
+		m, err := osfs.Lstat(rel)
+		verbose("m %v err %v", m, err)
+		return m, err
+	}
+	l, err := fs.lookup(filename)
+	if err != nil {
+		return nil, err
+	}
+	return &fstat{Record: &fs.recs[l.(*file).Path]}, nil
+}
+
 func (l *file) rec() (*cpio.Record, error) {
 	if int(l.Path) > len(l.fs.recs) {
 		return nil, os.ErrNotExist
