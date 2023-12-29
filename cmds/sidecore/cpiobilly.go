@@ -165,11 +165,12 @@ func (fs *fsCPIO) ReadDir(filename string) ([]os.FileInfo, error) {
 		for _, m := range fs.mnts {
 			// No clear union mount semantics on Linux
 			// for "some but not all". Oh well.
+			// Just continue
 			mfi, err := m.fs.Lstat(".")
 			verbose("mfi: %s %v %v", m.n, mfi, err)
 			if err != nil {
-				log.Printf("enumerating %q: %v", m.n, err)
-				return fi, nil
+				verbose("enumerating %q: %v", m.n, err)
+				continue
 			}
 			fi = append(fi, &ufstat{FileInfo: mfi, name: m.n})
 		}
@@ -435,9 +436,7 @@ func (l *file) rec() (*cpio.Record, error) {
 
 func (fs *fsCPIO) getfs(filename string) (billy.Filesystem, string, error) {
 	if l, rel, err := fs.hasMount(filename); err == nil {
-		if false {
-			log.Printf("getfs: rel %q \n%s", rel, string(dbg.Stack()))
-		}
+		verbose("getfs: rel %q \n%s", rel, string(dbg.Stack()))
 		return l.fs, rel, nil
 	}
 	return nil, "", os.ErrNotExist
@@ -458,15 +457,8 @@ func (fs *fsCPIO) lookup(filename string) (billy.File, error) {
 }
 
 func (fs *fsCPIO) Join(elem ...string) string {
-	log.Printf("fs:Join(%q)", elem)
+	verbose("fs:Join(%q)", elem)
 	n := path.Join(elem...)
-	// Can't do this, b/c of the way go-nfs calls things.
-	if false {
-	if _, rel, err := fs.getfs(n); err == nil {
-		log.Printf("fs returns %q", rel)
-		return rel
-	}
-	}
 	return n
 }
 func (fs *fsCPIO) Open(filename string) (billy.File, error) {
