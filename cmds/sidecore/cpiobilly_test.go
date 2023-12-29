@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"syscall"
 	"testing"
 )
 
@@ -109,6 +110,42 @@ func TestBillyFS(t *testing.T) {
 	}
 
 }
+
+func TestBillySymlink(t *testing.T) {
+	f, err := NewfsCPIO("data/a.cpio")
+	if err != nil {
+		t.Fatalf("NewfsCPIO(\"data/a.cpio\"): %v != nil", err)
+	}
+
+	fi, err := f.Lstat("a/b/hosts")
+	if err != nil {
+		t.Fatalf(`Stat("a/b/hosts"): %v != nil `, err)
+	}
+	m := fi.Mode()
+	if m.Type() != fs.ModeSymlink {
+		t.Fatalf(`Stat("a/b/hosts").Mode(): %v != %v `, m.Type(), fs.ModeSymlink)
+	}
+	h1, err := f.Open("a/b/hosts")
+	if err != nil {
+		t.Fatalf(`Open("a/b/hosts"): %v != nil`, m.Type())
+	}
+	var b [512]byte
+	if _, err := h1.ReadAt(b[:], 0); err == nil {
+		t.Fatalf(`ReadAll("a/b/hosts"): nil != an error`)
+	}
+	if err := h1.Close(); err != nil {
+		t.Fatalf(`Close("a/b/hosts"): %v != nil`, err)
+	}
+
+	if _, err = f.Readlink("a/b/22"); err == nil {
+		t.Fatalf(`Readlink("a/b/22"): nil != %v`, syscall.ELOOP)
+	}
+
+	if _, err = f.Readlink("a/b/c/d/hosts"); !errors.Is(err, os.ErrInvalid) {
+		t.Fatalf(`Readlink("a/b/22"): nil != %v`, os.ErrInvalid)
+	}
+}
+
 func TestBillyFSMount(t *testing.T) {
 	v = t.Logf
 	osfs := NewOSFS("home")
