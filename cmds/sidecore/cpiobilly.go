@@ -12,6 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// This is a big of an odd experiment.
+// For 9p, we build a unionfs, and a cpiofs. But a cpiofs, most of the time,
+// says "can't do that."
+// So for this iteration, we made the cpiofs the "default" case for file
+// operations, and put mounts "in front of" the cpio.
+// Rather than having the cpio fail anything looking like a write, we
+// embed a struct in the fs that performs those operations on the mounts.
+// As noted, still an experiment, and whether the simplification of having
+// one, not two, file systems is worht the increased complexity is an open
+// question.
 package main
 
 import (
