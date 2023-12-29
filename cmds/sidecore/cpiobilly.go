@@ -307,27 +307,10 @@ func NewfsCPIO(c string, mounts ...MountPoint) (*fsCPIO, error) {
 		return nil, err
 	}
 
-	// gross hack. Track /home, which is always there,
-	// and make two additional "/home" directories: /Users
-	// and C:/Users
 	m := map[string]uint64{}
-	var home uint64
 	for i, r := range recs {
 		v("put %s in %d", r.Info.Name, i)
 		m[r.Info.Name] = uint64(i)
-		if r.Info.Name == "home" {
-			home = uint64(i)
-		}
-	}
-
-	// Add entries not commonly found in docker containers.
-	for _, v := range []string{"Users", "C:Users"} {
-		v := v
-		r := recs[home]
-		r.Info.Name = v
-		x := uint64(len(recs))
-		recs = append(recs, r)
-		m[v] = x
 	}
 
 	fs := &fsCPIO{file: f, rr: rr, recs: recs, m: m}
@@ -425,6 +408,7 @@ func (l *file) rec() (*cpio.Record, error) {
 
 func (fs *fsCPIO) getfs(filename string) (billy.Filesystem, string, error) {
 	if l, rel, err := fs.hasMount(filename); err == nil {
+		log.Printf("getfs: rel %q", rel)
 		return l.fs, rel, nil
 	}
 	return nil, "", os.ErrNotExist
@@ -445,9 +429,10 @@ func (fs *fsCPIO) lookup(filename string) (billy.File, error) {
 }
 
 func (fs *fsCPIO) Join(elem ...string) string {
-	verbose("fs:Join(%q)", elem)
+	log.Printf("fs:Join(%q)", elem)
 	n := path.Join(elem...)
 	if _, rel, err := fs.getfs(n); err == nil {
+		log.Printf("fs returns %q", rel)
 		return rel
 	}
 	return n
@@ -581,6 +566,10 @@ func (ROFS) Capabilities() billy.Capability {
 // srvNFS sets up an nfs server. dir string is for things like home.
 // it might be dir ...string some day?
 func srvNFS(cl *client.Cmd, n string, dir string) (func() error, string, error) {
+	dir, err := filepath.Rel(dir, "/")
+	if err != nil {
+		return nil, "", err
+	}
 	osfs := NewOSFS(dir)
 	verbose("Create New OSFS with %q", dir)
 	mem, err := NewfsCPIO(n, WithMount(dir, osfs))
