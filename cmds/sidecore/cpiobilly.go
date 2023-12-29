@@ -159,6 +159,19 @@ func (fs *fsCPIO) ReadDir(filename string) ([]os.FileInfo, error) {
 		return nil, err
 	}
 	fi, err := l.(*file).ReadDir(0, 1048576) // no idea what to do for size.
+	if len(filename) == 0 {
+		for _, m := range fs.mnts {
+			// No clear union mount semantics on Linux
+			// for "some but not all". Oh well.
+			mfi, err := m.fs.Lstat(".")
+			verbose("mfi: %s %v %v", m.n, mfi, err)
+			if err != nil {
+				log.Printf("enumerating %q: %v", m.n, err)
+				return fi, nil
+			}
+			fi = append(fi, &ufstat{FileInfo: mfi, name: m.n})
+		}
+	}
 	verbose("%v, %v", fi, err)
 	return fi, err
 }
@@ -281,6 +294,18 @@ func WithMount(n string, fs billy.Filesystem) MountPoint {
 	return MountPoint{n: n, fs: fs}
 }
 
+// ufstat implements os.FileInfo, save that the name
+// may be overridden. This is useful when the name of the
+// FileInfo should be overridden, as in a MountPoint
+type ufstat struct {
+	os.FileInfo
+	name string
+}
+
+func(u ufstat) Name() string {
+	return u.name
+}
+
 // NewfsCPIO returns a fsCPIO, properly initialized.
 func NewfsCPIO(c string, mounts ...MountPoint) (*fsCPIO, error) {
 	f, err := os.Open(c)
@@ -384,7 +409,7 @@ func (fs *fsCPIO) Stat(filename string) (os.FileInfo, error) {
 }
 
 func (fs *fsCPIO) Lstat(filename string) (os.FileInfo, error) {
-	verbose("fs: Stat %q", filename)
+	verbose("fs: Lstat %q", filename)
 	if osfs, rel, err := fs.getfs(filename); err == nil {
 		verbose("osfs stat %q", rel)
 		m, err := osfs.Lstat(rel)
@@ -566,13 +591,13 @@ func (ROFS) Capabilities() billy.Capability {
 // srvNFS sets up an nfs server. dir string is for things like home.
 // it might be dir ...string some day?
 func srvNFS(cl *client.Cmd, n string, dir string) (func() error, string, error) {
-	dir, err := filepath.Rel(dir, "/")
+	mdir, err := filepath.Rel("/", dir)
 	if err != nil {
 		return nil, "", err
 	}
 	osfs := NewOSFS(dir)
 	verbose("Create New OSFS with %q", dir)
-	mem, err := NewfsCPIO(n, WithMount(dir, osfs))
+	mem, err := NewfsCPIO(n, WithMount(mdir, osfs))
 	if err != nil {
 		return nil, "", err
 	}
