@@ -530,8 +530,11 @@ func (ROFS) Capabilities() billy.Capability {
 	return billy.ReadCapability
 }
 
-func srvNFS(cl *client.Cmd, n string) (func() error, string, error) {
-	mem, err := NewfsCPIO(n)
+// srvNFS sets up an nfs server. dir string is for things like home.
+// it might be dir ...string some day?
+func srvNFS(cl *client.Cmd, n string, dir string) (func() error, string, error) {
+	osfs := NewOSFS(dir)
+	mem, err := NewfsCPIO(n, WithMount("home", osfs))
 	if err != nil {
 		return nil, "", err
 	}
@@ -562,7 +565,7 @@ func srvNFS(cl *client.Cmd, n string) (func() error, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	handler := NewNullAuthHandler(l, ROFS{mem}, u.String())
+	handler := NewNullAuthHandler(l, mem, u.String())
 	log.Printf("uuid is %q", u.String())
 	cacheHelper := nfshelper.NewCachingHandler(handler, 1024)
 	f := func() error {
