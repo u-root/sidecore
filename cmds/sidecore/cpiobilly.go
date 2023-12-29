@@ -146,6 +146,7 @@ func (*fsCPIO) Create(_ string) (billy.File, error) {
 // ReadDir implements readdir for fsCPIO.
 // If path is empty, ino 0 (root) is assumed.
 func (fs *fsCPIO) ReadDir(filename string) ([]os.FileInfo, error) {
+	verbose("fsCPIO readdir: %q", filename)
 	if osfs, rel, err := fs.getfs(filename); err == nil {
 		return osfs.ReadDir(rel)
 	}
@@ -306,10 +307,27 @@ func NewfsCPIO(c string, mounts ...MountPoint) (*fsCPIO, error) {
 		return nil, err
 	}
 
+	// gross hack. Track /home, which is always there,
+	// and make two additional "/home" directories: /Users
+	// and C:/Users
 	m := map[string]uint64{}
+	var home uint64
 	for i, r := range recs {
 		v("put %s in %d", r.Info.Name, i)
 		m[r.Info.Name] = uint64(i)
+		if r.Info.Name == "home" {
+			home = uint64(i)
+		}
+	}
+
+	// Add entries not commonly found in docker containers.
+	for _, v := range []string{"Users", "C:Users"} {
+		v := v
+		r := recs[home]
+		r.Info.Name = v
+		x := uint64(len(recs))
+		recs = append(recs, r)
+		m[v] = x
 	}
 
 	fs := &fsCPIO{file: f, rr: rr, recs: recs, m: m}
@@ -354,9 +372,13 @@ func (fs *fsCPIO) resolvelink(filename string) (string, error){
 	return filename, err
 }
 
-func (fs *fsCPIO) walk(filename string) (string, error){
-}
-
+// Stat stats the file name.
+// There's a little confusion here in bill and go-nfs.
+// Unix kernels walk the file name component by component.
+// stat on the client is responsible for handling walks of symlinks.
+// It is critical to let the client do this, else it will be confused
+// about actual pathnames. If we don't let the kernel do the work,
+// we will have to do it here, and that way lies madness.
 func (fs *fsCPIO) Stat(filename string) (os.FileInfo, error) {
 	verbose("fs: Stat %q", filename)
 	if osfs, rel, err := fs.getfs(filename); err == nil {
@@ -366,7 +388,8 @@ func (fs *fsCPIO) Stat(filename string) (os.FileInfo, error) {
 		return m, err
 	}
 
-	filename, err := fs.resolvelink(filename)
+	// Don't do this. The client does it.
+	// filename, err := fs.resolvelink(filename)
 
 	l, err := fs.lookup(filename)
 	if err != nil {
@@ -559,6 +582,7 @@ func (ROFS) Capabilities() billy.Capability {
 // it might be dir ...string some day?
 func srvNFS(cl *client.Cmd, n string, dir string) (func() error, string, error) {
 	osfs := NewOSFS(dir)
+	verbose("Create New OSFS with %q", dir)
 	mem, err := NewfsCPIO(n, WithMount(dir, osfs))
 	if err != nil {
 		return nil, "", err
