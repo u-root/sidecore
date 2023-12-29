@@ -31,8 +31,8 @@ func TestBillyFS(t *testing.T) {
 	if err != nil {
 		t.Fatalf(`Readdir("."): %v != nil `, err)
 	}
-	if len(ents) != 2 {
-		t.Fatalf(`Readdir("."): %d entries != 2 `, len(ents))
+	if len(ents) != 3 {
+		t.Fatalf(`Readdir("."): %d entries != 3 `, len(ents))
 	}
 
 	h1, err := f.Open(".")
@@ -193,7 +193,7 @@ func TestBillyFSMount(t *testing.T) {
 
 	h1, err = f.Open("a/b/c/d/hosts")
 	if err != nil {
-		t.Fatalf(`Open("a/b/c/d/hosts"): %v != nil`, m.Type())
+		t.Fatalf(`Open("a/b/c/d/hosts"): %v != nil`, err)
 	}
 	n, err := h1.ReadAt(b[:], 0)
 	// ReadAt is allowed to return io.EOF OR nil when
@@ -266,5 +266,28 @@ func TestBillyFSMount(t *testing.T) {
 	m = fi.Mode()
 	if m.Type() != fs.ModeSymlink {
 		t.Fatalf(`Stat("home/glenda/h").Mode(): %v != %v `, m.Type(), fs.ModeSymlink)
+	}
+}
+
+func TestBillySymlinkLib(t *testing.T) {
+	f, err := NewfsCPIO("data/a.cpio")
+	if err != nil {
+		t.Fatalf("NewfsCPIO(\"data/a.cpio\"): %v != nil", err)
+	}
+
+	// This is not how the kernel walks files; it uses the
+	// classic ntoi() loop to walk one pathname component at
+	// a time. So simulate that.
+	//h1, err := f.Open("lib/b/hosts")
+	ents, err := f.ReadDir("lib")
+	if err != nil {
+		t.Fatalf(`Readdir("lib"): %v != nil `, err)
+	}
+	if len(ents) != 1 {
+		t.Fatalf(`Readdir("lib"): %d entries != 1 `, len(ents))
+	}
+	t.Logf("lib readdir, entries %v", ents)
+	if ents[0].Name() != "b" {
+		t.Fatalf(`Readdir("lib"): ents[0] name is %q, not 'b'`, ents[0].Name())
 	}
 }

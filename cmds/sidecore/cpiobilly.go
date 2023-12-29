@@ -149,6 +149,10 @@ func (fs *fsCPIO) ReadDir(filename string) ([]os.FileInfo, error) {
 	if osfs, rel, err := fs.getfs(filename); err == nil {
 		return osfs.ReadDir(rel)
 	}
+	if s, err := fs.resolvelink(filename); err == nil {
+		filename = s
+	}
+	verbose("fsCPIO readdir: %q", filename)
 	l, err := fs.lookup(filename)
 	if err != nil {
 		return nil, err
@@ -317,24 +321,27 @@ func NewfsCPIO(c string, mounts ...MountPoint) (*fsCPIO, error) {
 	return fs, nil
 }
 
-func (fs *fsCPIO) Stat(filename string) (os.FileInfo, error) {
-	verbose("fs: Stat %q", filename)
-	if osfs, rel, err := fs.getfs(filename); err == nil {
-		verbose("osfs stat %q", rel)
-		m, err := osfs.Stat(rel)
-		verbose("m %v err %v", m, err)
-		return m, err
-	}
+// followlink will try to follow the symlink to its resolution.
+func (fs *fsCPIO) resolvelink(filename string) (string, error){
 	// Fun. For as long as readlink works,
 	// and we've done less than (whatevs) 20 readlinks,
 	// keep doing it. Then return what is left.
 	var linkcount int
+	var err error
 	for {
+		var s string
 		if linkcount > 20 {
-			return nil, syscall.ELOOP
+			return "", syscall.ELOOP
 		}
 
-		s, err := fs.Readlink(filename)
+		s, err = fs.Readlink(filename)
+		// If we have walked it once, the first target was
+		// a symlink. If it fails the first read, that is an
+		// error.
+		if linkcount > 0 && err == os.ErrInvalid {
+			err = nil
+			break
+		}
 		if err != nil {
 			break
 		}
@@ -344,10 +351,25 @@ func (fs *fsCPIO) Stat(filename string) (os.FileInfo, error) {
 		}
 		filename = s
 	}
+	return filename, err
+}
+
+func (fs *fsCPIO) Stat(filename string) (os.FileInfo, error) {
+	verbose("fs: Stat %q", filename)
+	if osfs, rel, err := fs.getfs(filename); err == nil {
+		verbose("osfs stat %q", rel)
+		m, err := osfs.Stat(rel)
+		verbose("m %v err %v", m, err)
+		return m, err
+	}
+
+	filename, err := fs.resolvelink(filename)
+
 	l, err := fs.lookup(filename)
 	if err != nil {
 		return nil, err
 	}
+
 	fi := &fstat{Record: &fs.recs[l.(*file).Path]}
 	return fi, nil
 }
