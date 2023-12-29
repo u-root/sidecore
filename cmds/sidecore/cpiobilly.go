@@ -12,6 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// This is a big of an odd experiment.
+// For 9p, we build a unionfs, and a cpiofs. But a cpiofs, most of the time,
+// says "can't do that."
+// So for this iteration, we made the cpiofs the "default" case for file
+// operations, and put mounts "in front of" the cpio.
+// Rather than having the cpio fail anything looking like a write, we
+// embed a struct in the fs that performs those operations on the mounts.
+// As noted, still an experiment, and whether the simplification of having
+// one, not two, file systems is worht the increased complexity is an open
+// question.
 package main
 
 import (
@@ -165,11 +175,12 @@ func (fs *fsCPIO) ReadDir(filename string) ([]os.FileInfo, error) {
 		for _, m := range fs.mnts {
 			// No clear union mount semantics on Linux
 			// for "some but not all". Oh well.
+			// Just continue
 			mfi, err := m.fs.Lstat(".")
 			verbose("mfi: %s %v %v", m.n, mfi, err)
 			if err != nil {
-				log.Printf("enumerating %q: %v", m.n, err)
-				return fi, nil
+				verbose("enumerating %q: %v", m.n, err)
+				continue
 			}
 			fi = append(fi, &ufstat{FileInfo: mfi, name: m.n})
 		}
@@ -435,9 +446,7 @@ func (l *file) rec() (*cpio.Record, error) {
 
 func (fs *fsCPIO) getfs(filename string) (billy.Filesystem, string, error) {
 	if l, rel, err := fs.hasMount(filename); err == nil {
-		if false {
-			log.Printf("getfs: rel %q \n%s", rel, string(dbg.Stack()))
-		}
+		verbose("getfs: rel %q \n%s", rel, string(dbg.Stack()))
 		return l.fs, rel, nil
 	}
 	return nil, "", os.ErrNotExist
@@ -458,15 +467,8 @@ func (fs *fsCPIO) lookup(filename string) (billy.File, error) {
 }
 
 func (fs *fsCPIO) Join(elem ...string) string {
-	log.Printf("fs:Join(%q)", elem)
+	verbose("fs:Join(%q)", elem)
 	n := path.Join(elem...)
-	// Can't do this, b/c of the way go-nfs calls things.
-	if false {
-	if _, rel, err := fs.getfs(n); err == nil {
-		log.Printf("fs returns %q", rel)
-		return rel
-	}
-	}
 	return n
 }
 func (fs *fsCPIO) Open(filename string) (billy.File, error) {
