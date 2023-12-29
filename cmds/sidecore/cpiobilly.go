@@ -534,7 +534,7 @@ func (ROFS) Capabilities() billy.Capability {
 // it might be dir ...string some day?
 func srvNFS(cl *client.Cmd, n string, dir string) (func() error, string, error) {
 	osfs := NewOSFS(dir)
-	mem, err := NewfsCPIO(n, WithMount("home", osfs))
+	mem, err := NewfsCPIO(n, WithMount(dir, osfs))
 	if err != nil {
 		return nil, "", err
 	}
