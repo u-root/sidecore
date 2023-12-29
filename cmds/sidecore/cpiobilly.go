@@ -36,6 +36,8 @@ import (
 	"github.com/u-root/u-root/pkg/cpio"
 	nfs "github.com/willscott/go-nfs"
 	nfshelper "github.com/willscott/go-nfs/helpers"
+
+dbg "runtime/debug"
 )
 
 type no struct{}
@@ -433,7 +435,9 @@ func (l *file) rec() (*cpio.Record, error) {
 
 func (fs *fsCPIO) getfs(filename string) (billy.Filesystem, string, error) {
 	if l, rel, err := fs.hasMount(filename); err == nil {
-		log.Printf("getfs: rel %q", rel)
+		if false {
+			log.Printf("getfs: rel %q \n%s", rel, string(dbg.Stack()))
+		}
 		return l.fs, rel, nil
 	}
 	return nil, "", os.ErrNotExist
@@ -456,9 +460,12 @@ func (fs *fsCPIO) lookup(filename string) (billy.File, error) {
 func (fs *fsCPIO) Join(elem ...string) string {
 	log.Printf("fs:Join(%q)", elem)
 	n := path.Join(elem...)
+	// Can't do this, b/c of the way go-nfs calls things.
+	if false {
 	if _, rel, err := fs.getfs(n); err == nil {
 		log.Printf("fs returns %q", rel)
 		return rel
+	}
 	}
 	return n
 }
