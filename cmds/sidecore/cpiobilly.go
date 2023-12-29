@@ -354,6 +354,9 @@ func (fs *fsCPIO) resolvelink(filename string) (string, error){
 	return filename, err
 }
 
+func (fs *fsCPIO) walk(filename string) (string, error){
+}
+
 func (fs *fsCPIO) Stat(filename string) (os.FileInfo, error) {
 	verbose("fs: Stat %q", filename)
 	if osfs, rel, err := fs.getfs(filename); err == nil {
