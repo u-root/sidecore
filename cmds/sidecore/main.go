@@ -42,6 +42,7 @@ type cpu struct {
 	keyfile string
 	hostkey string
 	fstab   string
+	home    string
 }
 
 var (
@@ -251,7 +252,7 @@ func newCPU(srv p9.Attacher, wg sync.WaitGroup, container string, cpu *cpu, args
 	defer close(errChan)
 
 	if *srvnfs {
-		f, fstab, err := srvNFS(c, container)
+		f, fstab, err := srvNFS(c, container, cpu.home)
 		if err != nil {
 			return err
 		}
@@ -439,6 +440,7 @@ func main() {
 		}
 		cpu.hostkey = hostKeyFile
 		cpu.fstab = fstab
+		cpu.home = home
 
 		verbose("cpu to %v:%v", cpu.host, cpu.port)
 		if err := newCPU(u, wg, container, &cpu, args...); err != nil {
