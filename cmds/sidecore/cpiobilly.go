@@ -62,7 +62,6 @@ func (*fsCPIO) Root() string {
 }
 
 func (*no) Rename(oldpath, newpath string) error { return os.ErrPermission }
-func (*no) Remove(filename string) error         { return os.ErrPermission }
 
 // TempFile
 func (*no) TempFile(dir, prefix string) (billy.File, error) { return nil, os.ErrPermission }
@@ -523,6 +522,15 @@ func (l *file) ReadAt(p []byte, offset int64) (int, error) {
 		return -1, err
 	}
 	return r.ReadAt(p, offset)
+}
+
+// Remove implements billy.Remove
+func (fs *fsCPIO) Remove(filename string) error {
+	verbose("fs: remove %q", filename)
+	if osfs, rel, err := fs.getfs(filename); err == nil {
+		return osfs.Remove(rel)
+	}
+	return os.ErrPermission
 }
 
 // Write implements nfs.WriteAt.
