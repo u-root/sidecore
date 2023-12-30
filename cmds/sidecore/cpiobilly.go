@@ -47,7 +47,7 @@ import (
 	nfs "github.com/willscott/go-nfs"
 	nfshelper "github.com/willscott/go-nfs/helpers"
 
-dbg "runtime/debug"
+	dbg "runtime/debug"
 )
 
 type no struct{}
@@ -61,10 +61,9 @@ func (*fsCPIO) Root() string {
 	return "/" // not os.PathSeparator; this is cpio.
 }
 
-func (*no) Create(filename string) (billy.File, error) { return nil, os.ErrInvalid }
-func (*no) Stat(filename string) (os.FileInfo, error)  { panic("stat"); return nil, os.ErrInvalid }
-func (*no) Rename(oldpath, newpath string) error       { return os.ErrPermission }
-func (*no) Remove(filename string) error               { return os.ErrPermission }
+func (*no) Stat(filename string) (os.FileInfo, error) { panic("stat"); return nil, os.ErrInvalid }
+func (*no) Rename(oldpath, newpath string) error      { return os.ErrPermission }
+func (*no) Remove(filename string) error              { return os.ErrPermission }
 
 // TempFile
 func (*no) TempFile(dir, prefix string) (billy.File, error) { return nil, os.ErrPermission }
@@ -147,11 +146,6 @@ func (f *fsCPIO) mount(m MountPoint) error {
 
 // Chroot
 func (*fsCPIO) Chroot(_ string) (billy.Filesystem, error) {
-	return nil, os.ErrPermission
-}
-
-// Create
-func (*fsCPIO) Create(_ string) (billy.File, error) {
 	return nil, os.ErrPermission
 }
 
@@ -315,7 +309,7 @@ type ufstat struct {
 	name string
 }
 
-func(u ufstat) Name() string {
+func (u ufstat) Name() string {
 	return u.name
 }
 
@@ -361,7 +355,7 @@ func NewfsCPIO(c string, mounts ...MountPoint) (*fsCPIO, error) {
 }
 
 // followlink will try to follow the symlink to its resolution.
-func (fs *fsCPIO) resolvelink(filename string) (string, error){
+func (fs *fsCPIO) resolvelink(filename string) (string, error) {
 	// Fun. For as long as readlink works,
 	// and we've done less than (whatevs) 20 readlinks,
 	// keep doing it. Then return what is left.
@@ -477,6 +471,14 @@ func (fs *fsCPIO) Open(filename string) (billy.File, error) {
 		return osfs.Open(rel)
 	}
 	return fs.lookup(filename)
+}
+
+func (fs *fsCPIO) Create(filename string) (billy.File, error) {
+	verbose("fs: Create %q", filename)
+	if osfs, rel, err := fs.getfs(filename); err == nil {
+		return osfs.Create(rel)
+	}
+	return nil, os.ErrPermission
 }
 
 func (*no) OpenFile(filename string, flag int, perm os.FileMode) (billy.File, error) {
@@ -643,7 +645,7 @@ func srvNFS(cl *client.Cmd, n string, dir string) (func() error, string, error) 
 	f := func() error {
 		return nfs.Serve(l, cacheHelper)
 	}
-	fstab := fmt.Sprintf("127.0.0.1:%s /tmp/cpu nfs ro,relatime,vers=3,rsize=1048576,wsize=1048576,namlen=255,hard,nolock,proto=tcp,port=%d,timeo=600,retrans=2,sec=sys,mountaddr=127.0.0.1,mountvers=3,mountport=%d,mountproto=tcp,local_lock=all,addr=127.0.0.1 0 0\n", u, portnfs, portnfs)
+	fstab := fmt.Sprintf("127.0.0.1:%s /tmp/cpu nfs rw,relatime,vers=3,rsize=1048576,wsize=1048576,namlen=255,hard,nolock,proto=tcp,port=%d,timeo=600,retrans=2,sec=sys,mountaddr=127.0.0.1,mountvers=3,mountport=%d,mountproto=tcp,local_lock=all,addr=127.0.0.1 0 0\n", u, portnfs, portnfs)
 	return f, fstab, nil
 }
 
