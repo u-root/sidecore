@@ -664,7 +664,7 @@ func srvNFS(cl *client.Cmd, n string, dir string) (func() error, string, error) 
 	if err != nil {
 		return nil, "", err
 	}
-	handler := NewNullAuthHandler(l, mem, u.String())
+	handler := NewNullAuthHandler(l, COS{mem}, u.String())
 	log.Printf("uuid is %q", u.String())
 	cacheHelper := nfshelper.NewCachingHandler(handler, 1024)
 	f := func() error {

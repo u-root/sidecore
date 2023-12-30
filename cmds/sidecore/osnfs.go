@@ -10,7 +10,7 @@ import (
 
 func NewOSFS(r string) billy.Filesystem {
 	bfs := osfs.New(r, osfs.WithBoundOS())
-	return COS{bfs}
+	return bfs
 }
 
 // COS or OSFS + Change wraps a billy.FS to not fail the `Change` interface.
