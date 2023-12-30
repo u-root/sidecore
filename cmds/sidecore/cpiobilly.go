@@ -61,7 +61,6 @@ func (*fsCPIO) Root() string {
 	return "/" // not os.PathSeparator; this is cpio.
 }
 
-func (*no) Stat(filename string) (os.FileInfo, error) { panic("stat"); return nil, os.ErrInvalid }
 func (*no) Rename(oldpath, newpath string) error      { return os.ErrPermission }
 func (*no) Remove(filename string) error              { return os.ErrPermission }
 
@@ -69,11 +68,9 @@ func (*no) Remove(filename string) error              { return os.ErrPermission 
 func (*no) TempFile(dir, prefix string) (billy.File, error) { return nil, os.ErrPermission }
 
 // Dir
-func (*no) ReadDir(path string) ([]os.FileInfo, error)       { panic("readdir"); return nil, os.ErrInvalid }
 func (*no) MkdirAll(filename string, perm os.FileMode) error { return os.ErrPermission }
 
 // Symlink
-func (*no) Lstat(filename string) (os.FileInfo, error) { panic("Lstat"); return nil, os.ErrInvalid }
 func (*no) Symlink(target, link string) error          { return os.ErrPermission }
 
 // File
