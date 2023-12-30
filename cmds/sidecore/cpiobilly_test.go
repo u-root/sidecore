@@ -333,3 +333,31 @@ func TestBillyFSRename(t *testing.T) {
 		t.Errorf("Rename %q to %q: nil != an errro", oldn, newn)
 	}
 }
+
+func TestBillyFSMkdirAll(t *testing.T) {
+	dir := t.TempDir()
+	v = t.Logf
+	osfs := NewOSFS(dir)
+	rdir, err := filepath.Rel("/", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fs, err := NewfsCPIO("data/a.cpio", WithMount(rdir, osfs))
+	if err != nil {
+		t.Fatalf("NewfsCPIO(\"data/a.cpio\", WithMount(%q, ...)): %v != nil", dir, err)
+	}
+
+	n := filepath.Join(rdir, "a/b/c/d/e")
+	if err := fs.MkdirAll(n, 0777); err != nil {
+		t.Errorf("MkdirAll %q: %v != nil", n, err)
+	}
+
+	real := filepath.Join(dir, "a/b/c/d/e")
+	if _, err := os.Stat(real); err != nil {
+		t.Fatalf("Checking first result:%v", err)
+	}
+
+	if err := fs.MkdirAll("a/b", 0777); err == nil {
+		t.Errorf("MkdirAll \"a/b\": nil != an error")
+	}
+}
