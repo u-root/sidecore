@@ -62,9 +62,6 @@ func (*fsCPIO) Root() string {
 // TempFile
 func (*no) TempFile(dir, prefix string) (billy.File, error) { return nil, os.ErrPermission }
 
-// Symlink
-func (*no) Symlink(target, link string) error { return os.ErrPermission }
-
 // File
 func (*no) Name() string              { panic("Name"); return "" }
 func (*no) Lock() error               { return nil }
@@ -494,6 +491,18 @@ func (fs *fsCPIO) Create(filename string) (billy.File, error) {
 	return nil, os.ErrPermission
 }
 
+// Symlink implements billy.Symlink
+// There is no checking as to validity, as that in the
+// general case is impossible and not sensible.
+func (fs *fsCPIO) Symlink(value, path string) error {
+	verbose("fs: Symlink %q -> %q", path, value)
+	if osfs, rel, err := fs.getfs(path); err == nil {
+		return osfs.Symlink(value, rel)
+	}
+	return os.ErrPermission
+}
+
+// Rename implements billy.Rename
 func (fs *fsCPIO) Rename(oldpath, newpath string) error {
 	verbose("fs: Rename %q %q", oldpath, newpath)
 	if oldosfs, oldrel, err := fs.getfs(oldpath); err == nil {

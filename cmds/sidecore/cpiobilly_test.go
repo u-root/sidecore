@@ -361,3 +361,33 @@ func TestBillyFSMkdirAll(t *testing.T) {
 		t.Errorf("MkdirAll \"a/b\": nil != an error")
 	}
 }
+
+func TestBillyFSSymlink(t *testing.T) {
+	dir := t.TempDir()
+	v = t.Logf
+	osfs := NewOSFS(dir)
+	rdir, err := filepath.Rel("/", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fs, err := NewfsCPIO("data/a.cpio", WithMount(rdir, osfs))
+	if err != nil {
+		t.Fatalf("NewfsCPIO(\"data/a.cpio\", WithMount(%q, ...)): %v != nil", dir, err)
+	}
+
+	n := filepath.Join(rdir, "a")
+	if err := fs.Symlink("value", n); err != nil {
+		t.Errorf("Symlink %q -> \"value\": %v != nil", n, err)
+	}
+
+	r := filepath.Join(dir, "a")
+	if v, err := os.Readlink(r); err != nil || v != "value" {
+		t.Errorf("Readlink(%s): %s, %v != \"value\", nil", r, v, err)
+		dents, err := os.ReadDir(dir)
+		t.Logf("contents of %q: %v, %v", dir, dents, err)
+	}
+
+	if err := fs.Symlink("a/z", "value"); err == nil {
+		t.Errorf("Symlink \"a/b\" -> \"value\": nil != an error")
+	}
+}
