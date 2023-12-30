@@ -50,8 +50,8 @@ import (
 
 type no struct{}
 
-// Chroot
-func (*no) Chroot(_ string) (billy.Filesystem, error) {
+// Chroot. This is deprecated, so we don't bother.
+func (*fsCPIO) Chroot(_ string) (billy.Filesystem, error) {
 	return nil, os.ErrInvalid
 }
 
@@ -61,9 +61,6 @@ func (*fsCPIO) Root() string {
 
 // TempFile
 func (*no) TempFile(dir, prefix string) (billy.File, error) { return nil, os.ErrPermission }
-
-// Dir
-func (*no) MkdirAll(filename string, perm os.FileMode) error { return os.ErrPermission }
 
 // Symlink
 func (*no) Symlink(target, link string) error { return os.ErrPermission }
@@ -135,11 +132,6 @@ func (f *fsCPIO) mount(m MountPoint) error {
 	}
 	f.mnts = append(f.mnts, m)
 	return nil
-}
-
-// Chroot
-func (*fsCPIO) Chroot(_ string) (billy.Filesystem, error) {
-	return nil, os.ErrPermission
 }
 
 // ReadDir implements readdir for fsCPIO.
@@ -514,6 +506,15 @@ func (fs *fsCPIO) Rename(oldpath, newpath string) error {
 		}
 
 		return newosfs.Rename(oldrel, newrel)
+	}
+	return os.ErrPermission
+}
+
+// MkdirAll implements billy.MkdirAll
+func (fs *fsCPIO) MkdirAll(filename string, perm os.FileMode) error {
+	verbose("fs: MkdirAll %q", filename)
+	if osfs, rel, err := fs.getfs(filename); err == nil {
+		return osfs.MkdirAll(rel, perm)
 	}
 	return os.ErrPermission
 }
