@@ -46,8 +46,6 @@ import (
 	"github.com/u-root/u-root/pkg/cpio"
 	nfs "github.com/willscott/go-nfs"
 	nfshelper "github.com/willscott/go-nfs/helpers"
-
-	dbg "runtime/debug"
 )
 
 type no struct{}
@@ -60,8 +58,6 @@ func (*no) Chroot(_ string) (billy.Filesystem, error) {
 func (*fsCPIO) Root() string {
 	return "/" // not os.PathSeparator; this is cpio.
 }
-
-func (*no) Rename(oldpath, newpath string) error { return os.ErrPermission }
 
 // TempFile
 func (*no) TempFile(dir, prefix string) (billy.File, error) { return nil, os.ErrPermission }
@@ -459,7 +455,7 @@ func (l *file) rec() (*cpio.Record, error) {
 // It also returns the filename path relative to the filesystem mount.
 func (fs *fsCPIO) getfs(filename string) (billy.Filesystem, string, error) {
 	if l, rel, err := fs.hasMount(filename); err == nil {
-		verbose("getfs: rel %q \n%s", rel, string(dbg.Stack()))
+		verbose("getfs: rel %q", rel)
 		return l.fs, rel, nil
 	}
 	return nil, "", os.ErrNotExist
@@ -504,6 +500,22 @@ func (fs *fsCPIO) Create(filename string) (billy.File, error) {
 		return osfs.Create(rel)
 	}
 	return nil, os.ErrPermission
+}
+
+func (fs *fsCPIO) Rename(oldpath, newpath string) error {
+	verbose("fs: Rename %q %q", oldpath, newpath)
+	if oldosfs, oldrel, err := fs.getfs(oldpath); err == nil {
+		newosfs, newrel, err := fs.getfs(newpath)
+		if err != nil {
+			return fmt.Errorf("Rename(%q,%q): %v", oldpath, newpath, err)
+		}
+		if newosfs != oldosfs {
+			return fmt.Errorf("Rename(%q,%q): can not cross file systems", oldpath, newpath)
+		}
+
+		return newosfs.Rename(oldrel, newrel)
+	}
+	return os.ErrPermission
 }
 
 // OpenFile implements OpenFile, searching, first, the mount points.

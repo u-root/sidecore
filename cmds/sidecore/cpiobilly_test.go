@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"syscall"
 	"testing"
 )
@@ -163,13 +164,16 @@ func TestBillyFSMount(t *testing.T) {
 	if m.Type() != fs.ModeSymlink {
 		t.Fatalf(`Stat("a/b/hosts").Mode(): %v != %v `, m.Type(), fs.ModeSymlink)
 	}
+
+	// Yes, Stat does not follow symlinks. The remote nfs client,
+	// the kernel, expects that.
 	fi, err = f.Stat("a/b/hosts")
 	if err != nil {
 		t.Fatalf(`Stat("a/b/hosts"): %v != nil `, err)
 	}
 	m = fi.Mode()
-	if !m.IsRegular() {
-		t.Fatalf(`Stat("a/b/hosts").Mode(): %v != true `, m.IsRegular())
+	if m.Type() != fs.ModeSymlink {
+		t.Fatalf(`Stat("a/b/hosts").Mode(): %v != true `, m.Type() != fs.ModeSymlink)
 	}
 	h1, err := f.Open("a/b/hosts")
 	if err != nil {
@@ -289,5 +293,43 @@ func TestBillySymlinkLib(t *testing.T) {
 	t.Logf("lib readdir, entries %v", ents)
 	if ents[0].Name() != "b" {
 		t.Fatalf(`Readdir("lib"): ents[0] name is %q, not 'b'`, ents[0].Name())
+	}
+}
+
+func TestBillyFSRename(t *testing.T) {
+	dir := t.TempDir()
+	v = t.Logf
+	osfs := NewOSFS(dir)
+	rdir, err := filepath.Rel("/", dir)
+	t.Logf("dir %q rdir %q", dir, rdir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fs, err := NewfsCPIO("data/a.cpio", WithMount(rdir, osfs))
+	if err != nil {
+		t.Fatalf("NewfsCPIO(\"data/a.cpio\", WithMount(%q, ...)): %v != nil", dir, err)
+	}
+
+	oldn := filepath.Join(dir, "a")
+	if err := os.WriteFile(oldn, []byte{}, 0666); err != nil {
+		t.Fatal(err)
+	}
+
+	oldn = filepath.Join(rdir, "a")
+	newn := filepath.Join(rdir, "b")
+	if err := fs.Rename(oldn, newn); err != nil {
+		t.Errorf("Rename %q to %q: %v != nil", oldn, newn, err)
+	}
+	if err := fs.Rename(newn, oldn); err != nil {
+		t.Errorf("Rename %q to %q: %v != nil", oldn, newn, err)
+	}
+	if err := fs.Rename("a/b/c/d/hosts", "a/b/c/d/hosts2"); err == nil {
+		t.Errorf("Rename %q to %q: nil != an errro", oldn, newn)
+	}
+	if err := fs.Rename("a/b/c/d/hosts", oldn); err == nil {
+		t.Errorf("Rename %q to %q: nil != an errro", oldn, newn)
+	}
+	if err := fs.Rename(oldn, "a/b/c/d/hosts"); err == nil {
+		t.Errorf("Rename %q to %q: nil != an errro", oldn, newn)
 	}
 }
