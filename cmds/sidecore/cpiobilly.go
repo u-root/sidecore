@@ -110,6 +110,7 @@ type fsCPIO struct {
 	mnts []MountPoint
 }
 
+// MountPoint is a mountpiont in an fsCPIO
 type MountPoint struct {
 	n  string
 	fs billy.Filesystem
@@ -218,25 +219,30 @@ func uToGo(m uint64) os.FileMode {
 	return os.FileMode(perm | t)
 }
 
+// Mode implements Mode for an fsCPIO.
 func (f *fsCPIO) Mode() os.FileMode {
 	m := uToGo(f.recs[0].Mode)
 	verbose("fsCPIO mode: %v %#x", m, uint64(m))
 	return m
 }
 
+// ModTime always returns 0.
 func (f *fsCPIO) ModTime() time.Time {
 	return time.Unix(0, 0)
 }
 
+// IsDir always returns true.
 func (f *fsCPIO) IsDir() bool {
 	verbose("fsCPIO mode: true")
 	return true
 }
 
+// Sys returns nil, always.
 func (f *fsCPIO) Sys() any {
 	return nil
 }
 
+// Readlink implements ReadLink
 func (fs *fsCPIO) Readlink(link string) (string, error) {
 	if osfs, rel, err := fs.getfs(link); err == nil {
 		return osfs.Readlink(rel)
@@ -250,7 +256,10 @@ func (fs *fsCPIO) Readlink(link string) (string, error) {
 
 var _ billy.Filesystem = &fsCPIO{}
 
-// A file is a server and an index into the cpio records.
+// file implements billy.Filly for fsCPIO files.
+// A file is a server and an index into the cpio records,
+// with some embedded structs to implement always-failing or
+// always succeeding operations..
 type file struct {
 	no
 	fileFail
@@ -261,39 +270,47 @@ type file struct {
 
 var _ billy.File = &file{}
 
-// fstat implements fs.FileInfo. Arguably, cpio.Record should.
+// fstat implements fs.FileInfo.
 type fstat struct {
 	*cpio.Record
 }
 
+// Name implements Name.
 func (f *fstat) Name() string {
 	verbose("file Name(): rec %v", f.Record)
 	return path.Base(f.Record.Name)
 }
 
+// Size implements Size.
 func (f *fstat) Size() int64 {
 	return int64(f.FileSize)
 }
 
+// Mode implements Mode.
 func (f *fstat) Mode() os.FileMode {
 	m := uToGo(f.Record.Mode)
 	verbose("fstat mode: %v %#x", m, uint64(m))
 	return m
 }
 
+// ModTime implements ModTime, always returning the Unix epoch.
 func (f *fstat) ModTime() time.Time {
 	return time.Unix(0, 0)
 }
 
+// IsDir implements IsDir.
 func (f *fstat) IsDir() bool {
 	verbose("fstat mode: %v", f.Mode()&cpio.S_IFDIR == cpio.S_IFDIR)
 	return f.Mode().IsDir()
 }
 
+// Sys implements Sys, always returning nil.
 func (f *fstat) Sys() any {
 	return nil
 }
 
+// WithMount allows the addition of mounts to an fsCPIO,
+// as part of a NewfsCPIO call.
 func WithMount(n string, fs billy.Filesystem) MountPoint {
 	return MountPoint{n: n, fs: fs}
 }
@@ -306,6 +323,7 @@ type ufstat struct {
 	name string
 }
 
+// Name implements Name
 func (u ufstat) Name() string {
 	return u.name
 }
@@ -351,7 +369,7 @@ func NewfsCPIO(c string, mounts ...MountPoint) (*fsCPIO, error) {
 	return fs, nil
 }
 
-// followlink will try to follow the symlink to its resolution.
+// resolvelink will try to follow the symlink to its resolution.
 func (fs *fsCPIO) resolvelink(filename string) (string, error) {
 	// Fun. For as long as readlink works,
 	// and we've done less than (whatevs) 20 readlinks,
@@ -385,12 +403,13 @@ func (fs *fsCPIO) resolvelink(filename string) (string, error) {
 }
 
 // Stat stats the file name.
-// There's a little confusion here in bill and go-nfs.
+// There's a little confusion here in billy and go-nfs.
 // Unix kernels walk the file name component by component.
 // stat on the client is responsible for handling walks of symlinks.
 // It is critical to let the client do this, else it will be confused
 // about actual pathnames. If we don't let the kernel do the work,
-// we will have to do it here, and that way lies madness.
+// we will have to do it here, and that way lies madness; we would have
+// to reimplement the pathname-component by pathname-component walk..
 func (fs *fsCPIO) Stat(filename string) (os.FileInfo, error) {
 	verbose("fs: Stat %q", filename)
 	if osfs, rel, err := fs.getfs(filename); err == nil {
@@ -412,6 +431,7 @@ func (fs *fsCPIO) Stat(filename string) (os.FileInfo, error) {
 	return fi, nil
 }
 
+// Lstat implements Lstat.
 func (fs *fsCPIO) Lstat(filename string) (os.FileInfo, error) {
 	verbose("fs: Lstat %q", filename)
 	if osfs, rel, err := fs.getfs(filename); err == nil {
@@ -427,6 +447,7 @@ func (fs *fsCPIO) Lstat(filename string) (os.FileInfo, error) {
 	return &fstat{Record: &fs.recs[l.(*file).Path]}, nil
 }
 
+// rec returns a cpio.Record for a file.
 func (l *file) rec() (*cpio.Record, error) {
 	if int(l.Path) > len(l.fs.recs) {
 		return nil, os.ErrNotExist
@@ -435,6 +456,8 @@ func (l *file) rec() (*cpio.Record, error) {
 	return &l.fs.recs[l.Path], nil
 }
 
+// getfs returns the filesystem, or error, for a given filename.
+// It also returns the filename path relative to the filesystem mount.
 func (fs *fsCPIO) getfs(filename string) (billy.Filesystem, string, error) {
 	if l, rel, err := fs.hasMount(filename); err == nil {
 		verbose("getfs: rel %q \n%s", rel, string(dbg.Stack()))
@@ -443,6 +466,8 @@ func (fs *fsCPIO) getfs(filename string) (billy.Filesystem, string, error) {
 	return nil, "", os.ErrNotExist
 }
 
+// lookup looks up a name in the fsCPIO. If the name is "",
+// the root is assumed (this is what billy seems to require).
 func (fs *fsCPIO) lookup(filename string) (billy.File, error) {
 	var ino uint64
 	if len(filename) > 0 {
@@ -457,11 +482,14 @@ func (fs *fsCPIO) lookup(filename string) (billy.File, error) {
 	return l, nil
 }
 
+// Join implements Join
 func (fs *fsCPIO) Join(elem ...string) string {
 	verbose("fs:Join(%q)", elem)
 	n := path.Join(elem...)
 	return n
 }
+
+// Open implements Open, searching, first, the mount points.
 func (fs *fsCPIO) Open(filename string) (billy.File, error) {
 	verbose("fs: Open %q", filename)
 	if osfs, rel, err := fs.getfs(filename); err == nil {
@@ -470,6 +498,7 @@ func (fs *fsCPIO) Open(filename string) (billy.File, error) {
 	return fs.lookup(filename)
 }
 
+// Create implements Create, searching, first, the mount points.
 func (fs *fsCPIO) Create(filename string) (billy.File, error) {
 	verbose("fs: Create %q", filename)
 	if osfs, rel, err := fs.getfs(filename); err == nil {
@@ -478,6 +507,7 @@ func (fs *fsCPIO) Create(filename string) (billy.File, error) {
 	return nil, os.ErrPermission
 }
 
+// OpenFile implements OpenFile, searching, first, the mount points.
 func (fs *fsCPIO) OpenFile(filename string, flag int, perm os.FileMode) (billy.File, error) {
 	verbose("fs: OpenFile %q", filename)
 	if osfs, rel, err := fs.getfs(filename); err == nil {
@@ -486,7 +516,7 @@ func (fs *fsCPIO) OpenFile(filename string, flag int, perm os.FileMode) (billy.F
 	return nil, os.ErrPermission
 }
 
-// Read implements p9.File.ReadAt.
+// Read implements nfs.ReadAt.
 func (l *file) ReadAt(p []byte, offset int64) (int, error) {
 	r, err := l.rec()
 	if err != nil {
@@ -495,13 +525,14 @@ func (l *file) ReadAt(p []byte, offset int64) (int, error) {
 	return r.ReadAt(p, offset)
 }
 
-// Write implements p9.File.WriteAt.
+// Write implements nfs.WriteAt.
 func (l *file) WriteAt(p []byte, offset int64) (int, error) {
 	return -1, os.ErrPermission
 }
 
-// readdir returns a slice of indices for a directory.
-// See commend below as to why it must be a slice, not a range.
+// readdir returns a slice of indices for a directory, from
+// the cpio records in the file system.
+// See comment below as to why it must return a slice, not a range.
 func (l *file) readdir() ([]uint64, error) {
 	verbose("file:readdir at %d", l.Path)
 	r, err := l.rec()
@@ -583,20 +614,6 @@ func (l *file) Readlink() (string, error) {
 	}
 	v("cpio:readlink: %q", string(link))
 	return string(link), nil
-}
-
-// ROFS is an intercepter for the filesystem indicating it should
-// be read only. The undelrying billy.Memfs indicates it supports
-// writing, but does not in implement billy.Change to support
-// modification of permissions / modTimes, and as such cannot be
-// used as RW system.
-type ROFS struct {
-	billy.Filesystem
-}
-
-// Capabilities exports the filesystem as readonly
-func (ROFS) Capabilities() billy.Capability {
-	return billy.ReadCapability
 }
 
 // srvNFS sets up an nfs server. dir string is for things like home.
