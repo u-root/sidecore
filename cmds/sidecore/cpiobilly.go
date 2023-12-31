@@ -58,7 +58,7 @@ func (*fsCPIO) Root() string {
 }
 
 // Name implements billy.Name
-func (f*file) Name() string  { 
+func (f *file) Name() string {
 	var s string
 	if r, err := f.rec(); err != nil {
 		s = r.Name
@@ -68,7 +68,7 @@ func (f*file) Name() string  {
 
 // Lock implements billy.Lock
 // There is no need for it, since cpio files are unchanging.
-func (*file) Lock() error   { return nil }
+func (*file) Lock() error { return nil }
 
 // Unlock implements billy.Unlock
 // There is no need for it, since cpio files are unchanging.
@@ -76,13 +76,13 @@ func (*file) Unlock() error { return nil }
 
 // Write does not implement billy.Write, since NFS does not use it.
 // NFS always specifies an offset.
-func (*file) Write(p []byte) (n int, err error) { 
+func (*file) Write(p []byte) (n int, err error) {
 	return -1, os.ErrInvalid
 }
 
 // Read does not implement billy.Read, since NFS does not use it.
 // NFS always specifies an offset.
-func (*file) Read(p []byte) (n int, err error)  {
+func (*file) Read(p []byte) (n int, err error) {
 	return -1, os.ErrInvalid
 }
 
@@ -94,23 +94,29 @@ func (*file) Seek(offset int64, whence int) (int64, error) {
 
 // Close implements billy.Close.
 // It always succeeds.
-func (*file) Close() error { 
-	return nil 
+func (*file) Close() error {
+	return nil
 }
 
-// fsCPIO implements fs.Stat
+// MountPoint is a mountpoint in an fsCPIO
+type MountPoint struct {
+	n  string
+	fs billy.Filesystem
+}
+
+// fsCPIO implements billy.Filesystem. It also implements fs.Stat
+// It combines a CPIO file system, as the "backing store",
+// and a set of mountpoints, as layers. In our earlier implementation,
+// we built a union mount and CPIO file system for 9p. This merge
+// of the two makes for less code, and slightly easier to understand
+// rules: always check the mounts first, and always fall back to the
+// CPIO fs if those fail.
 type fsCPIO struct {
 	file *os.File
 	rr   cpio.RecordReader
 	m    map[string]uint64
 	recs []cpio.Record
 	mnts []MountPoint
-}
-
-// MountPoint is a mountpiont in an fsCPIO
-type MountPoint struct {
-	n  string
-	fs billy.Filesystem
 }
 
 func (f *fsCPIO) hasMount(n string) (*MountPoint, string, error) {
