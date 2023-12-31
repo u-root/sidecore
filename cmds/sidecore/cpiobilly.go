@@ -67,31 +67,36 @@ func (f*file) Name() string  {
 }
 
 // Lock implements billy.Lock
+// There is no need for it, since cpio files are unchanging.
 func (*file) Lock() error   { return nil }
 
 // Unlock implements billy.Unlock
+// There is no need for it, since cpio files are unchanging.
 func (*file) Unlock() error { return nil }
 
-// File IO -- most of these don't matter for NFS.
-// We do not track position, b/c NFS always sends an offset.
-type fileFail struct{}
-
-func (*fileFail) Write(p []byte) (n int, err error) { panic("Write"); return -1, os.ErrPermission }
-func (*fileFail) Read(p []byte) (n int, err error)  { panic("Read"); return -1, os.ErrPermission }
-func (*fileFail) Seek(offset int64, whence int) (int64, error) {
-	panic("Seek")
-	return -1, os.ErrPermission
+// Write does not implement billy.Write, since NFS does not use it.
+// NFS always specifies an offset.
+func (*file) Write(p []byte) (n int, err error) { 
+	return -1, os.ErrInvalid
 }
 
-// The only one we will actually implement -- later.
-func (*fileFail) ReadAt(p []byte, off int64) (n int, err error) {
-	panic("ReadAt")
-	return -1, os.ErrPermission
+// Read does not implement billy.Read, since NFS does not use it.
+// NFS always specifies an offset.
+func (*file) Read(p []byte) (n int, err error)  {
+	return -1, os.ErrInvalid
 }
 
-type ok struct{}
+// Seek does not implement billy.Seek, since NFS does not use it.
+// NFS always specifies an offset.
+func (*file) Seek(offset int64, whence int) (int64, error) {
+	return -1, os.ErrInvalid
+}
 
-func (*ok) Close() error { return nil }
+// Close implements billy.Close.
+// It always succeeds.
+func (*file) Close() error { 
+	return nil 
+}
 
 // fsCPIO implements fs.Stat
 type fsCPIO struct {
@@ -248,8 +253,6 @@ var _ billy.Filesystem = &fsCPIO{}
 // with some embedded structs to implement always-failing or
 // always succeeding operations..
 type file struct {
-	fileFail
-	ok
 	fs   *fsCPIO
 	Path uint64
 }
