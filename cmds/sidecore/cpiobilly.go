@@ -59,14 +59,10 @@ func (*fsCPIO) Root() string {
 	return "/" // not os.PathSeparator; this is cpio.
 }
 
-// TempFile
-func (*no) TempFile(dir, prefix string) (billy.File, error) { return nil, os.ErrPermission }
-
 // File
-func (*no) Name() string              { panic("Name"); return "" }
-func (*no) Lock() error               { return nil }
-func (*no) Unlock() error             { return nil }
-func (*no) Truncate(size int64) error { return os.ErrPermission }
+func (*no) Name() string  { panic("Name"); return "" }
+func (*no) Lock() error   { return nil }
+func (*no) Unlock() error { return nil }
 
 // File IO -- most of these don't matter for NFS.
 // We do not track position, b/c NFS always sends an offset.
@@ -491,6 +487,13 @@ func (fs *fsCPIO) Create(filename string) (billy.File, error) {
 	return nil, os.ErrPermission
 }
 
+// TempFile implements billy.TempFile
+// Not sure of all the implications of this just yet, especially the
+// default behavior, so for now, Just Don't Do It.
+func (fs *fsCPIO) TempFile(dir, prefix string) (billy.File, error) {
+	return nil, os.ErrPermission
+}
+
 // Symlink implements billy.Symlink
 // There is no checking as to validity, as that in the
 // general case is impossible and not sensible.
@@ -499,6 +502,11 @@ func (fs *fsCPIO) Symlink(value, path string) error {
 	if osfs, rel, err := fs.getfs(path); err == nil {
 		return osfs.Symlink(value, rel)
 	}
+	return os.ErrPermission
+}
+
+// Truncate implements billy.Truncate
+func (f *file) Truncate(size int64) error {
 	return os.ErrPermission
 }
 
