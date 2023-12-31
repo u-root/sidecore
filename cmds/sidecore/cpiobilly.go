@@ -48,8 +48,6 @@ import (
 	nfshelper "github.com/willscott/go-nfs/helpers"
 )
 
-type no struct{}
-
 // Chroot. This is deprecated, so we don't bother.
 func (*fsCPIO) Chroot(_ string) (billy.Filesystem, error) {
 	return nil, os.ErrInvalid
@@ -59,10 +57,20 @@ func (*fsCPIO) Root() string {
 	return "/" // not os.PathSeparator; this is cpio.
 }
 
-// File
-func (*no) Name() string  { panic("Name"); return "" }
-func (*no) Lock() error   { return nil }
-func (*no) Unlock() error { return nil }
+// Name implements billy.Name
+func (f*file) Name() string  { 
+	var s string
+	if r, err := f.rec(); err != nil {
+		s = r.Name
+	}
+	return s
+}
+
+// Lock implements billy.Lock
+func (*file) Lock() error   { return nil }
+
+// Unlock implements billy.Unlock
+func (*file) Unlock() error { return nil }
 
 // File IO -- most of these don't matter for NFS.
 // We do not track position, b/c NFS always sends an offset.
@@ -87,7 +95,6 @@ func (*ok) Close() error { return nil }
 
 // fsCPIO implements fs.Stat
 type fsCPIO struct {
-	no
 	file *os.File
 	rr   cpio.RecordReader
 	m    map[string]uint64
@@ -241,7 +248,6 @@ var _ billy.Filesystem = &fsCPIO{}
 // with some embedded structs to implement always-failing or
 // always succeeding operations..
 type file struct {
-	no
 	fileFail
 	ok
 	fs   *fsCPIO
