@@ -318,7 +318,7 @@ SIDECORE_IMAGES -- where the flattened cpio images are kept -- default ~/sidecor
 SIDECORE_KEYFILE -- key file, e.g. ~/.ssh/cpu_rsa -- default "", since it can be looked up in ~/.ssh/config for non-mDNS cases
 SIDECORE_HOSTKEYFILE -- host key file, it can be empty. -- default ""
 `)
-	log.Fatalf("%v:Usage: cpu [options] host [shell command]:\n%v", err, b.String())
+	log.Fatalf("%v:Usage: sidecore [options] host [shell command]:\n%v", err, b.String())
 }
 
 // Windows breaks all the rules, so we generate a
