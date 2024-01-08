@@ -12,29 +12,16 @@ requires your IoT system to run a small daemon in order to use it as a resource.
 
 ## Build and run
 
-**NOTE**: Go version 1.20 is required as a minimum.
-
-### Git repository
+**NOTE**: Go version 1.20 is required as a minimum. For more details, look at
+the [Go modules documentation](https://go.dev/ref/mod).
 
 If you have cloned this repository, run `go build ./cmds/sidecore` to build the
 command, then `./sidecore -h` for help.
 
-### Quick start
+### Quick installation
 
-To try out the command without explicitly cloning, run:
-
-```sh
-go run github.com/u-root/sidecore/cmds/sidecore@latest
-```
-
-### Installation
-
-To build the binary into your local Go bin directory, run:
+To install the binary to your `$GOBIN` (commonly `$HOME/go/bin`) directory, run:
 
 ```sh
 go install github.com/u-root/sidecore/cmds/sidecore@latest
 ```
-
-**NOTE**: Ensure to have that bin directory in your `$PATH` to run the resulting
-binary conveniently. For more details, look at the `go install` section in the
-[Go modules documentation](https://go.dev/ref/mod#go-install).
