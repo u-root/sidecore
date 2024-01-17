@@ -29,7 +29,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log"
 	"net"
 	"os"
 	"path"
@@ -694,7 +693,7 @@ func srvNFS(cl *client.Cmd, n string, dir string) (func() error, string, error) 
 			return nil, "", fmt.Errorf("cpu client listen for forwarded nfs port %v", err)
 		}
 	}
-	log.Printf("ssh.listener %v", l.Addr().String())
+	verbose("ssh.listener %v", l.Addr().String())
 	ap := strings.Split(l.Addr().String(), ":")
 	if len(ap) == 0 {
 		return nil, "", fmt.Errorf("Can't find a port number in %v", l.Addr().String())
@@ -710,7 +709,7 @@ func srvNFS(cl *client.Cmd, n string, dir string) (func() error, string, error) 
 		return nil, "", err
 	}
 	handler := NewNullAuthHandler(l, COS{mem}, u.String())
-	log.Printf("uuid is %q", u.String())
+	verbose("uuid is %q", u.String())
 	cacheHelper := nfshelper.NewCachingHandler(handler, 1024)
 	f := func() error {
 		return nfs.Serve(l, cacheHelper)
