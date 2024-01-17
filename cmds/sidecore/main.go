@@ -55,10 +55,10 @@ var (
 	port      = flag.String("sp", "", "cpu default port")
 	root      = flag.String("root", "/", "9p root")
 	timeout9P = flag.String("timeout9p", "100ms", "time to wait for the 9p mount to happen.")
-	ninep     = flag.Bool("9p", true, "Enable the 9p mount in the client")
+	ninep     = flag.Bool("9p", false, "Enable the 9p mount in the client")
 	env       = flag.String("environment", "", "extra environment variables, useful for debug, especially on windows")
 
-	srvnfs = flag.Bool("nfs", false, "start nfs")
+	srvnfs = flag.Bool("nfs", true, "start nfs")
 
 	// v allows debug printing.
 	// Do not call it directly, call verbose instead.
