@@ -121,6 +121,7 @@ type fsCPIO struct {
 func (f *fsCPIO) hasMount(n string) (*MountPoint, string, error) {
 	for i, v := range f.mnts {
 		if strings.HasPrefix(n, v.n) {
+			verbose("hasMount: check name %q mount %q", n, v.n)
 			rel, err := filepath.Rel(v.n, n)
 			if err != nil {
 				continue
