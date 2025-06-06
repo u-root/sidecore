@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build !windows && !plan9
+//go:build !windows
 
 package main
 
@@ -12,19 +12,18 @@ import (
 
 	"github.com/u-root/cpu/client"
 	ossh "golang.org/x/crypto/ssh"
-	"golang.org/x/sys/unix"
 )
 
 func notify(c chan os.Signal) {
-	signal.Notify(c, unix.SIGINT, unix.SIGTERM)
+	signal.Notify(c, os.Kill, os.Interrupt)
 }
 
 func sigerrors(c *client.Cmd, sig os.Signal) error {
 	var sigErr error
 	switch sig {
-	case unix.SIGINT:
+	case os.Interrupt:
 		sigErr = c.Signal(ossh.SIGINT)
-	case unix.SIGTERM:
+	case os.Kill:
 		sigErr = c.Signal(ossh.SIGTERM)
 	}
 	return sigErr

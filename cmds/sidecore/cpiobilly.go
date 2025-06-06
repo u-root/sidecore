@@ -36,7 +36,6 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/go-git/go-billy/v5"
@@ -374,7 +373,7 @@ func (fs *fsCPIO) resolvelink(filename string) (string, error) {
 	for {
 		var s string
 		if linkcount > 20 {
-			return "", syscall.ELOOP
+			return "", ErrLoop
 		}
 
 		s, err = fs.Readlink(filename)
