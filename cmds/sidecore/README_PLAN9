@@ -1,0 +1,3 @@
+Something is broken up to about 1.24.5 so:
+
+GOEXPERIMENT=nospinbitmutex GOOS=plan9 go build
