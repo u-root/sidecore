@@ -180,6 +180,10 @@ func getHostName(host string) (string, error) {
 	if !net.ParseIP(host).IsLinkLocalUnicast() {
 		return host, nil
 	}
+	// Plan 9 does not need this from what we can tell.
+	if runtime.GOOS == "plan9" {
+		return host, nil
+	}
 	iface, ok := os.LookupEnv("SIDECORE_IFACE")
 	if !ok {
 		return "", fmt.Errorf("%q IP6 link-level address requires environment variable SIDECORE_IFACE be set:%w", host, os.ErrInvalid)
